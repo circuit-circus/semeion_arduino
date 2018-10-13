@@ -54,7 +54,7 @@ void loop() {
   
   spectrumSerial = "";
   for(int i = 0; i < SPECTRUMSTEPS; i++) {
-    spectrumSerial = spectrumSerial + spectrum0[i];
+    spectrumSerial = spectrumSerial + spectrum[i];
     if(i < SPECTRUMSTEPS -1) {
       spectrumSerial = spectrumSerial + ",";
     }
