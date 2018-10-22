@@ -1,11 +1,13 @@
 #include <FastLED.h>
+#include <Animation.h>
+
+//#define ANI_LENGTH 5
 
 // How many leds in your strip?
 #define NUM_LEDS 25
 
 // For led chips like Neopixels, which have a data line, ground, and power, you just
-// need to define DATA_PIN.  For led chipsets that are SPI based (four wires - data, clock,
-// ground, and power), like the LPD8806 define both DATA_PIN and CLOCK_PIN
+// need to define DATA_PIN.  
 #define DATA_PIN 3
 
 // Define the array of leds
@@ -53,7 +55,6 @@ void loop() {
 
   Serial.print(y);
   Serial.print("\t");
-  Serial.println(t);
 }
 
 float animate(Animation c) {
@@ -89,13 +90,15 @@ float animate(Animation c) {
 //}
 
 void initAnimations() {
-
-  aniAppear.Set(
-  { 0, 0.85, 1.23, 0.8, 5.0 }
-  );
-  aniIdleHigh.Set(
-  {0.8, 0.8, 1.23, 0.8, 7.0 }
-  );
+//
+//  aniAppear.set(
+//  { 0, 0.85, 1.23, 0.8, 5.0 }
+//  );
+//  aniIdleHigh.set(
+//  {&curves[0][0], 5, 1 }
+//  );
 
 }
+
+
 
