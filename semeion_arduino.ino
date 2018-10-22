@@ -33,8 +33,12 @@ int avrgSampleIndex = 0;
 float movingAvrg = 0.0f;
 
 // Calibration
+const int BASELINE_SAMPLE_COUNT = 5;
+float baselineSamples[BASELINE_SAMPLE_COUNT];
+int baselineSampleIndex = 0;
+float baselineTotal = 0.0f;
 float baseline = 0.0f;
-bool isSensorCalibrated = false;
+static float baselineTolerance = 1.75f; // How much "noise" can be tolerate from the baseline?
 
 void setup() {
   Serial.begin(9600);
@@ -56,17 +60,37 @@ void loop() {
   FillSamples();
   CalculateMovingAverage();
 
-  if(millis() > 5000 && !isSensorCalibrated) {
+  // Calibrate in the first 5 seconds
+  if(millis() < 5000) {
     CalibrateSensor();
   }
 
+  float diff = abs(movingAvrg-baseline);
+
   Serial.print(F("Variation from baseline: "));
-  Serial.println(abs(movingAvrg-baseline));
+  if(diff < baselineTolerance) {
+    Serial.println(0.0f);
+  }
+  else {
+    Serial.println(abs(movingAvrg-baseline) - baselineTolerance);
+  }
 }
 
 void CalibrateSensor() {
-  baseline = movingAvrg;
-  isSensorCalibrated = true;
+  // Get next sample
+  baselineSamples[baselineSampleIndex] = movingAvrg;
+
+  // Reset baseline total
+  baselineTotal = 0.0f;
+  for(int i = 0; i < BASELINE_SAMPLE_COUNT; i++) {
+    // Add samples to baseline total
+    baselineTotal += baselineSamples[i];
+  }
+  // Baseline is equal to the total of the samples divided by the amount of samples, i.e. the average
+  baseline = baselineTotal / BASELINE_SAMPLE_COUNT;
+
+  // Keep track of amount of samples gathered
+  baselineSampleIndex = baselineSampleIndex < BASELINE_SAMPLE_COUNT-1 ? baselineSampleIndex + 1 : 0;
 }
 
 void FillSamples() {
