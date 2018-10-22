@@ -1,17 +1,15 @@
-/*
-	Multiple Sensors
- 
- 	This sketch shows how to read data from multiple sensors on a Tact sensor board
- 
- 	Created 16-10-2014
- 	By Philipp Schmitt
- 
- 	Modified 16-10-2014
- 	By Philipp Schmitt
- 
- 	http:// [github URL]
- */
+/* 
+ ––––––––––––––––
+|C I R C         |
+|U I T ~ ~ ~ ~ ~ |
+|                |
+|~ ~ ~ ~ C I R C |
+|            U S |
+ ––––––––––––––––
 
+SEMEION PROCESSING DEBUGGER
+A CIRCUIT CIRCUS PROJECT 
+*/
 
 // Include Tact Library
 #include <Tact.h>
@@ -19,15 +17,16 @@
 // Init new Tact Toolkit
 Tact Tact(TACT_MULTI);
 
-#define SENSOR_ID 0
-int SPECTRUMSTART = 60;
-#define SPECTRUMSTEPS 32
-#define SPECTRUMSTEPSIZE 1
+int SPECTRUMSTART = 65;
+const int SENSOR_ID = 0;
+const int SPECTRUMSTEPS = 32;
+const int SPECTRUMSTEPSIZE = 1;
 
 String spectrumSerial = "";
 
 // This shifts the SpectrumStart by one each time the shift timer runs out.
-// This result in "crashing" after 8 iterations, since the Tact library can only handle 8 sensors. 
+// It can be used to "hunt" for the best part of the spectrum
+// This result in "crashing" after 8 iterations, since the Tact library can only handle 8 tactSensor objects, and I haven't figured out how to clear out old tactSensors
 bool shouldShiftStart = false;
 long shiftTimer = 0;
 static long shiftTimerDuration = 7500;
