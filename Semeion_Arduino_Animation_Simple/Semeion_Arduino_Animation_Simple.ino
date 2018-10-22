@@ -24,17 +24,24 @@ float aniFadeHigh[] = {4, 0.8, 0.2, 0, 0, 50.0, -99, 0, 0, 0, 0, 0};
 //Animation aniMirror;
 //Animation aniIdleLow;
 //Animation aniClimax;
-
 //Animation aniDisappearHide;
 //Animation aniAppearLow;
 //Animation aniRandomPause;
 //Animation aniStimulation;
 
-boolean animationEnded;
+
+
+bool animationEnded;
 float t;
 long startTime;
 float duration;
 int iterator = 1;
+
+float tweenTime; 
+float easing = 0.1;
+float targetY;
+float startY;
+bool isTweening;
 
 void setup() {
   FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);
@@ -103,6 +110,24 @@ float animate(float p[]) {
   }
 
   return y;
+}
+
+/** NOT TESTED **/
+float tweenTo(float p[], float y){
+  if (!isTweening){
+    startY = y;
+    isTweening = true; 
+  }
+  targetY = animate(p); 
+  
+  float dy = targetY - startY;
+
+  if (startY == targetY){
+    isTweening = false;   
+  } else {
+    isTweening = true;
+  }
+  return startY += dy * easing;
 }
 
 
