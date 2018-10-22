@@ -7,27 +7,29 @@
 // need to define DATA_PIN.
 #define DATA_PIN 3
 
+//Maximum number of curves per animation
 #define MAX_ANI 2
 
 // Define the array of leds
 CRGB leds[NUM_LEDS];
 
+//Each curve consists of 11 parameters: id, curve1-y1, curve1-ycontrol1, curve1-y2, curve1-ycontrol2, curve1-duration, curve2-y1, curve2-ycontrol1 etc.
 float currentAnimation[11];
 float incomingAnimation[11];
 
 //Predefined animations
-float aniDark[] = {1, 0, 0, 0, 0, 20.0, -99, 0, 0, 0, 0, 0};
-//float aniIdleHigh[] = {2, 0.8, 0.8, 1.23, 0.8, 100.0, -99, 0, 0, 0, 0, 0};
-float aniIdleHigh[] = {2, 0.8, 0.8, 1.23, 0.8, 100.0, 0.8, 0.2, 0.2, 0.8, 60.0, -99};
-float aniAppearHigh[] = {3, 0, 0.6, 1, 0.8, 50.0, -99, 0, 0, 0, 0, 0};
-float aniFadeHigh[] = {4, 0.8, 0.2, 0, 0, 50.0, -99, 0, 0, 0, 0, 0};
-//Animation aniMirror;
-//Animation aniIdleLow;
-//Animation aniClimax;
-//Animation aniDisappearHide;
-//Animation aniAppearLow;
-//Animation aniRandomPause;
-//Animation aniStimulation;
+float aniDark[] = {1, 0, 0, 0, 0, 20.0, -99, 0, 0, 0, 0}; //-99 is used to terminate the reading of the array if all the curves are not defined.
+//float aniIdleHigh[] = {2, 0.8, 0.8, 1.23, 0.8, 100.0, -99, 0, 0, 0, 0};
+float aniIdleHigh[] = {2, 0.8, 0.8, 1.23, 0.8, 100.0, 0.8, 0.2, 0.2, 0.8, 60.0};
+float aniAppearHigh[] = {3, 0, 0.6, 1, 0.8, 50.0, -99, 0, 0, 0, 0};
+float aniFadeHigh[] = {4, 0.8, 0.2, 0, 0, 50.0, -99, 0, 0, 0, 0};
+//float aniMirror[];
+//float aniIdleLow[];
+//float aniClimax[];
+//float aniDisappearHide[];
+//float aniAppearLow[];
+//float aniRandomPause[];
+//float aniStimulation[];
 
 
 
@@ -57,6 +59,7 @@ void setup() {
 
 void loop() {
 
+  //This logic to trigger animations is only for testing 
   if (millis() - startTime > 5000 && currentAnimation[0] == aniDark[0] && animationEnded) {
     memcpy(currentAnimation, aniAppearHigh, (5 * MAX_ANI + 1)*sizeof(float));
   } else if ( currentAnimation[0] == aniAppearHigh[0] && animationEnded ) {
@@ -78,13 +81,14 @@ void loop() {
   FastLED.show();
   delay(10);
 
-  Serial.print(currentAnimation[0]);
-  Serial.print("\t");
-  Serial.print(iterator);
-  Serial.print("\t");
-  Serial.print(b);
-  Serial.print("\t");
-  Serial.println(t);
+  //Debugging
+//  Serial.print(currentAnimation[0]);
+//  Serial.print("\t");
+//  Serial.print(iterator);
+//  Serial.print("\t");
+//  Serial.print(b);
+//  Serial.print("\t");
+//  Serial.println(t);
 }
 
 float animate(float p[]) {
@@ -113,6 +117,7 @@ float animate(float p[]) {
 }
 
 /** NOT TESTED **/
+//Tweening function to tween when a new animation is started before the first one is finished. 
 float tweenTo(float p[], float y){
   if (!isTweening){
     startY = y;
