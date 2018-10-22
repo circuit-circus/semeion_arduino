@@ -3,11 +3,13 @@
 |C I R C         |
 |U I T ~ ~ ~ ~ ~ |
 |                |
+|                |
+|                |
 |~ ~ ~ ~ C I R C |
 |            U S |
  ––––––––––––––––
 
-SEMEION PROCESSING DEBUGGER
+SEMEION ARDUINO
 A CIRCUIT CIRCUS PROJECT 
 */
 
@@ -17,61 +19,85 @@ A CIRCUIT CIRCUS PROJECT
 // Init new Tact Toolkit
 Tact Tact(TACT_MULTI);
 
-int SPECTRUMSTART = 65;
+int SPECTRUMSTART = 73;
 const int SENSOR_ID = 0;
-const int SPECTRUMSTEPS = 32;
+const int SPECTRUMSTEPS = 24;
 const int SPECTRUMSTEPSIZE = 1;
 
-String spectrumSerial = "";
+int spectrum[SPECTRUMSTEPS];
 
-// This shifts the SpectrumStart by one each time the shift timer runs out.
-// It can be used to "hunt" for the best part of the spectrum
-// This result in "crashing" after 8 iterations, since the Tact library can only handle 8 tactSensor objects, and I haven't figured out how to clear out old tactSensors
-bool shouldShiftStart = false;
-long shiftTimer = 0;
-static long shiftTimerDuration = 7500;
+// Average values
+const int AVRG_SAMPLE_COUNT = 5;
+int avrgCounterSamples[SPECTRUMSTEPS][AVRG_SAMPLE_COUNT];
+int avrgSampleIndex = 0;
+float movingAvrg = 0.0f;
+
+// Calibration
+float baseline = 0.0f;
+bool isSensorCalibrated = false;
 
 void setup() {
-
-  Serial.begin(115200);
+  Serial.begin(9600);
 
   // Start Tact toolkit
   Tact.begin();
-
   // Add new Sensor and config
   Tact.addSensor(SENSOR_ID, SPECTRUMSTART, SPECTRUMSTEPS, SPECTRUMSTEPSIZE);
-  shiftTimer = millis();
 }
-
 
 void loop() {
-  if(millis() > shiftTimer + shiftTimerDuration && shouldShiftStart) {
-    SPECTRUMSTART += SPECTRUMSTEPS * SPECTRUMSTEPSIZE;
-    Tact.addSensor(SENSOR_ID, SPECTRUMSTART, SPECTRUMSTEPS, SPECTRUMSTEPSIZE);
-    shiftTimer = millis();
-  }
-
-  // read Peak and Bias for sensor
-  int bias = Tact.readBias(SENSOR_ID);
-  int peak = Tact.readPeak(SENSOR_ID);
   // read Spectrum for sensor
-  // the spectrum array holds as many values as defined in SPECTRUMSTEPS;
-  int spectrum[SPECTRUMSTEPS];
+  // the spectrum array holds as many values as defined in SPECTRUMSTEPS
   Tact.readSpectrum(SENSOR_ID, spectrum);
 
-  spectrumSerial = bias;
-  spectrumSerial = spectrumSerial + ",";
-  spectrumSerial = spectrumSerial + peak;
-  spectrumSerial = spectrumSerial + ",";
-  spectrumSerial = spectrumSerial + SPECTRUMSTART;
-  spectrumSerial = spectrumSerial + ",";
-  for(int i = 0; i < SPECTRUMSTEPS; i++) {
-    spectrumSerial += spectrum[i];
-    if(i < SPECTRUMSTEPS -1) {
-      spectrumSerial = spectrumSerial + ",";
-    }
+  // Keep track of how many samples we've gotten
+  avrgSampleIndex = avrgSampleIndex < AVRG_SAMPLE_COUNT-1 ? avrgSampleIndex + 1 : 0;
+
+  FillSamples();
+  CalculateMovingAverage();
+
+  if(millis() > 5000 && !isSensorCalibrated) {
+    CalibrateSensor();
   }
-  delay(50);
-  Serial.println(spectrumSerial);
+
+  Serial.print(F("Variation from baseline: "));
+  Serial.println(abs(movingAvrg-baseline));
 }
 
+void CalibrateSensor() {
+  baseline = movingAvrg;
+  isSensorCalibrated = true;
+}
+
+void FillSamples() {
+  for (int i = 0; i < SPECTRUMSTEPS; i++) {
+    avrgCounterSamples[i][avrgSampleIndex] = spectrum[i];
+  }
+}
+
+void CalculateMovingAverage() {
+  int avrgTotalArr[SPECTRUMSTEPS];
+  float avrgArr[SPECTRUMSTEPS];
+  float tempAverageTotal = 0.0f;
+
+  // Get averages for each section of the spectrum
+  for (int i = 0; i < SPECTRUMSTEPS; i++) {
+    // Init the arrays to make sure they are 0
+    avrgTotalArr[i] = 0;
+    avrgArr[i] = 0.0f;
+
+    // Add up the total avrg for this spectrum section
+    for (int j = 0; j < AVRG_SAMPLE_COUNT; j++) {
+      avrgTotalArr[i] += avrgCounterSamples[i][j];
+    }
+    // Divide by amount of samples in spectrum section to get average
+    avrgArr[i] = avrgTotalArr[i] / AVRG_SAMPLE_COUNT;
+
+    tempAverageTotal += avrgArr[i];
+  }
+
+  // Reset moving average
+  movingAvrg = 0.0f;
+  // Divide our temporary total of the averages with the amount of steps to get moving average
+  movingAvrg = tempAverageTotal / SPECTRUMSTEPS;
+}
