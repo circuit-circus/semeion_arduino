@@ -23,7 +23,7 @@
 /** LED
 
 */
-#define NUM_LEDS 4
+#define NUM_LEDS 25
 #define DATA_PIN 3
 #define MAX_ANI 2 //Maximum number of curves per animation
 CRGB leds [NUM_LEDS];
@@ -65,36 +65,37 @@ bool isTweening;
 */
 Tact Tact(TACT_MULTI);
 int SPECTRUMSTART = 73;
-const int SENSOR_ID = 0;
-const int SPECTRUMSTEPS = 24;
+const int SENSOR_ID = 3;
+const int SPECTRUMSTEPS = 12;
 const int SPECTRUMSTEPSIZE = 1;
 int spectrum[SPECTRUMSTEPS];
 
 // Tact - Average values
-const int AVRG_SAMPLE_COUNT = 5;
+const uint8_t AVRG_SAMPLE_COUNT = 2;
 int avrgCounterSamples[SPECTRUMSTEPS][AVRG_SAMPLE_COUNT];
-int avrgSampleIndex = 0;
+uint8_t avrgSampleIndex = 0;
 float movingAvrg = 0.0f; // a.k.a. MA
 
 // Tact - Calibration
-const int BASELINE_SAMPLE_COUNT = 5;
+const uint8_t BASELINE_SAMPLE_COUNT = 5;
 float baselineSamples[BASELINE_SAMPLE_COUNT];
-int baselineSampleIndex = 0;
+uint8_t baselineSampleIndex = 0;
 float baselineTotal = 0.0f;
 float calibratedBaseline = 0.0f;
 static float baselineTolerance = 1.75f; // How much "noise" can be tolerate from the calibratedBaseline?
+static long calibrateTime = 6000;
 
 // Tact - Meaningful values
 float distance = 0.0f;
 float acceleration = 0.0f;
 
 // Tact - Distance smoothing
-const int numReadings = 50;
+const int numDistReadings = 100;
 
-float readings[numReadings]; // the readings from the analog input
-int readIndex = 0; // the index of the current reading
-float total = 0.0f; // the running total
-float averageDistance = 0.0f; // the average
+float distReadings[numDistReadings]; // the distReadings from the analog input
+uint8_t distReadIndex = 0; // the index of the current reading
+float distTotal = 0.0f; // the running distTotal
+float distAvrg = 0.0f; // the average
 
 /** I2C INITS
 
@@ -103,8 +104,6 @@ float averageDistance = 0.0f; // the average
 
 // 10 byte data buffer
 int receiveBuffer[9];
-// A counter to send back
-uint8_t keepCounted = 0;
 
 void setup() {
   Serial.begin(9600);
@@ -121,8 +120,9 @@ void setup() {
   // Start FastLED
   FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);
 
-  for ( int i = 0; i < NUM_LEDS; i++) {
+  for(uint8_t i = 0; i < NUM_LEDS; i++) {
     leds[i].setRGB( 0, 0, 0);
+    FastLED.show();
   }
 
   memcpy(currentAnimation, aniDark, 11 * sizeof(float));
@@ -131,8 +131,12 @@ void setup() {
 
 void loop() {
   runTactSensor();
-  showLight(averageDistance);
+  if(millis() > calibrateTime) {
+    showLight(distAvrg);
+  }
 }
+
+/* Tact Sensor functions */
 
 void runTactSensor() {
   // read Spectrum for sensor
@@ -147,21 +151,24 @@ void runTactSensor() {
   calculateMovingAverage();
 
   // Calibrate in the first 5 seconds
-  if (millis() < 3000) {
+  if (millis() < calibrateTime) {
     calibratedBaseline = calculateBaseline();
     Serial.println("Calibrating");
     calculateDistAndAcc(calibratedBaseline);
+    smoothDistance();
   }
   // Else just keep calculating the dist and acceleration
   else {
     calculateDistAndAcc(calculateBaseline());
+
+    // Smooth the distance in the end
+    smoothDistance();
+
+    // Serial.println(acceleration);
+    Serial.println(distAvrg);
   }
 
-  Serial.println(acceleration);
-  // Serial.println(averageDistance);
-
-  // Smooth the distance var in the end
-  SmoothDistance();
+  // Serial.println(Tact.readBias(SENSOR_ID) + SPECTRUMSTART);
 }
 
 // Fill out our 2D array with spectrum samples
@@ -172,43 +179,43 @@ void fillSamples() {
 }
 
 void calculateMovingAverage() {
-  int avrgTotalArr[SPECTRUMSTEPS];
+  int avrgdistTotalArr[SPECTRUMSTEPS];
   float avrgArr[SPECTRUMSTEPS];
-  float tempAverageTotal = 0.0f;
+  float tempAveragedistTotal = 0.0f;
 
   // Get averages for each section of the spectrum
   for (int i = 0; i < SPECTRUMSTEPS; i++) {
     // Init the arrays to make sure they are 0
-    avrgTotalArr[i] = 0;
+    avrgdistTotalArr[i] = 0;
     avrgArr[i] = 0.0f;
 
-    // Add up the total avrg for this spectrum section
+    // Add up the distTotal avrg for this spectrum section
     for (int j = 0; j < AVRG_SAMPLE_COUNT; j++) {
-      avrgTotalArr[i] += avrgCounterSamples[i][j];
+      avrgdistTotalArr[i] += avrgCounterSamples[i][j];
     }
     // Divide by amount of samples in spectrum section to get average
-    avrgArr[i] = avrgTotalArr[i] / AVRG_SAMPLE_COUNT;
+    avrgArr[i] = avrgdistTotalArr[i] / AVRG_SAMPLE_COUNT;
 
-    tempAverageTotal += avrgArr[i];
+    tempAveragedistTotal += avrgArr[i];
   }
 
   // Reset moving average
   movingAvrg = 0.0f;
-  // Divide our temporary total of the averages with the amount of steps to get moving average
-  movingAvrg = tempAverageTotal / SPECTRUMSTEPS;
+  // Divide our temporary distTotal of the averages with the amount of steps to get moving average
+  movingAvrg = tempAveragedistTotal / SPECTRUMSTEPS;
 }
 
 float calculateBaseline() {
   // Get next sample
   baselineSamples[baselineSampleIndex] = movingAvrg;
 
-  // Reset calibratedBaseline total
+  // Reset calibratedBaseline distTotal
   baselineTotal = 0.0f;
   for (int i = 0; i < BASELINE_SAMPLE_COUNT; i++) {
-    // Add samples to calibratedBaseline total
+    // Add samples to calibratedBaseline distTotal
     baselineTotal += baselineSamples[i];
   }
-  // calibratedBaseline is equal to the total of the samples divided by the amount of samples, i.e. the average
+  // calibratedBaseline is equal to the distTotal of the samples divided by the amount of samples, i.e. the average
   float bl = baselineTotal / BASELINE_SAMPLE_COUNT;
 
   // Keep track of amount of samples gathered
@@ -230,29 +237,29 @@ void calculateDistAndAcc(float accelerationBaseline) {
   acceleration = abs(movingAvrg - accelerationBaseline);
 }
 
-void SmoothDistance() {
+void smoothDistance() {
   // subtract the last reading:
-  total -= readings[readIndex];
+  distTotal -= distReadings[distReadIndex];
   // read from the variable to be smoothed:
-  readings[readIndex] = distance;
-  // add the reading to the total:
-  total += readings[readIndex];
+  distReadings[distReadIndex] = distance;
+  // add the reading to the distTotal:
+  distTotal += distReadings[distReadIndex];
   // advance to the next position in the array:
-  readIndex++;
+  distReadIndex++;
 
   // if we're at the end of the array...
-  if (readIndex >= numReadings) {
+  if (distReadIndex >= numDistReadings) {
     // ...wrap around to the beginning:
-    readIndex = 0;
+    distReadIndex = 0;
   }
 
   // calculate the average:
-  averageDistance = total / numReadings;
-  // Serial.println(averageDistance);
+  distAvrg = distTotal / numDistReadings;
   delay(1); // delay in between reads for stability
 }
 
 /* I2C Functions */
+
 // Read data in to buffer with the offset in first element, so we can use it in sendData
 void receiveData(int byteCount) {
   int counter = 0;
@@ -265,7 +272,7 @@ void receiveData(int byteCount) {
 void sendData() {
   // If the buffer is set to 99, make some data
   if (receiveBuffer[0] == 99) {
-    writeData(distance);
+    writeData(distAvrg);
   } 
   else {
     Serial.println("No function for this address");
@@ -275,7 +282,7 @@ void sendData() {
 // Write data
 void writeData(float newData) {
   char dataString[8];
-  // Convert our data to a string/char[] with min length 5
+  // Convert our data to a string/char[] with min length 5 
   dtostrf(newData, 5, 3, dataString);
   Wire.write(dataString);
 }
@@ -283,11 +290,11 @@ void writeData(float newData) {
 /* LED Functions */
 
 void showLight(float d) {
-  if (distance > 5 && currentAnimation[0] == aniDark[0] && animationEnded) {
+  if (d > 5 && currentAnimation[0] == aniDark[0] && animationEnded) {
     memcpy(currentAnimation, aniAppearHigh, (5 * MAX_ANI + 1)*sizeof(float));
   } else if ( currentAnimation[0] == aniAppearHigh[0] && animationEnded ) {
     memcpy(currentAnimation, aniIdleHigh, (5 * MAX_ANI + 1)*sizeof(float));
-  } else if ( distance <= 5 && currentAnimation[0] == aniIdleHigh[0] && animationEnded) {
+  } else if ( d <= 5 && currentAnimation[0] == aniIdleHigh[0] && animationEnded) {
     memcpy(currentAnimation, aniFadeHigh, (5 * MAX_ANI + 1)*sizeof(float));
   } else if ( currentAnimation[0] == aniFadeHigh[0] && animationEnded) {
     memcpy(currentAnimation, aniDark, (5 * MAX_ANI + 1)*sizeof(float));
