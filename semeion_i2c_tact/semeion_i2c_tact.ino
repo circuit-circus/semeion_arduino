@@ -74,18 +74,27 @@ int spectrum[SPECTRUMSTEPS];
 const int AVRG_SAMPLE_COUNT = 5;
 int avrgCounterSamples[SPECTRUMSTEPS][AVRG_SAMPLE_COUNT];
 int avrgSampleIndex = 0;
-float movingAvrg = 0.0f;
+float movingAvrg = 0.0f; // a.k.a. MA
 
 // Tact - Calibration
 const int BASELINE_SAMPLE_COUNT = 5;
 float baselineSamples[BASELINE_SAMPLE_COUNT];
 int baselineSampleIndex = 0;
 float baselineTotal = 0.0f;
-float baseline = 0.0f;
-static float baselineTolerance = 1.75f; // How much "noise" can be tolerate from the baseline?
+float calibratedBaseline = 0.0f;
+static float baselineTolerance = 1.75f; // How much "noise" can be tolerate from the calibratedBaseline?
 
-float distance = 0; //Tact reading 
-float acceleration = 0; //Tact reading
+// Tact - Meaningful values
+float distance = 0.0f;
+float acceleration = 0.0f;
+
+// Tact - Distance smoothing
+const int numReadings = 50;
+
+float readings[numReadings]; // the readings from the analog input
+int readIndex = 0; // the index of the current reading
+float total = 0.0f; // the running total
+float averageDistance = 0.0f; // the average
 
 /** I2C INITS
 
@@ -122,47 +131,7 @@ void setup() {
 
 void loop() {
   runTactSensor();
-  showLight(distance);
-}
-
-// Read data in to buffer with the offset in first element, so we can use it in sendData
-void receiveData(int byteCount) {
-  int counter = 0;
-  while (Wire.available()) {
-    receiveBuffer[counter] = Wire.read();
-    counter++;
-  }
-}
-
-// Find the difference between the current reading and the baseline for distance and acceleration. 
-void calculateDiff(float accelerationBaseline) {
-    distance = abs(movingAvrg - baseline);
-  if (distance >= baselineTolerance) {
-    distance = abs(movingAvrg - baseline) - baselineTolerance;
-  }
-  else {
-    distance = 0.0f;
-  }
-  
-  acceleration = abs(movingAvrg - accelerationBaseline);
-}
-
-void sendData() {
-  // If the buffer is set to 99, make some data
-  if (receiveBuffer[0] == 99) {
-    writeData(distance);
-  } 
-  else {
-    Serial.println("No function for this address");
-  }
-}
-
-// Write data
-void writeData(float newData) {
-  char dataString[8];
-  // Convert our data to a string/char[] with min length 5
-  dtostrf(newData, 5, 3, dataString);
-  Wire.write(dataString);
+  showLight(averageDistance);
 }
 
 void runTactSensor() {
@@ -173,37 +142,29 @@ void runTactSensor() {
   // Keep track of how many samples we've gotten
   avrgSampleIndex = avrgSampleIndex < AVRG_SAMPLE_COUNT - 1 ? avrgSampleIndex + 1 : 0;
 
+  // Collect samples and calculate the MA from that
   fillSamples();
   calculateMovingAverage();
 
   // Calibrate in the first 5 seconds
   if (millis() < 3000) {
-    baseline = calibrateSensor();
+    calibratedBaseline = calculateBaseline();
     Serial.println("Calibrating");
+    calculateDistAndAcc(calibratedBaseline);
+  }
+  // Else just keep calculating the dist and acceleration
+  else {
+    calculateDistAndAcc(calculateBaseline());
   }
 
-  calculateDiff(calibrateSensor());
+  Serial.println(acceleration);
+  // Serial.println(averageDistance);
+
+  // Smooth the distance var in the end
+  SmoothDistance();
 }
 
-float calibrateSensor() {
-  // Get next sample
-  baselineSamples[baselineSampleIndex] = movingAvrg;
-
-  // Reset baseline total
-  baselineTotal = 0.0f;
-  for (int i = 0; i < BASELINE_SAMPLE_COUNT; i++) {
-    // Add samples to baseline total
-    baselineTotal += baselineSamples[i];
-  }
-  // Baseline is equal to the total of the samples divided by the amount of samples, i.e. the average
-  float bl = baselineTotal / BASELINE_SAMPLE_COUNT;
-
-  // Keep track of amount of samples gathered
-  baselineSampleIndex = baselineSampleIndex < BASELINE_SAMPLE_COUNT - 1 ? baselineSampleIndex + 1 : 0;
-
-  return bl;
-}
-
+// Fill out our 2D array with spectrum samples
 void fillSamples() {
   for (int i = 0; i < SPECTRUMSTEPS; i++) {
     avrgCounterSamples[i][avrgSampleIndex] = spectrum[i];
@@ -236,6 +197,90 @@ void calculateMovingAverage() {
   // Divide our temporary total of the averages with the amount of steps to get moving average
   movingAvrg = tempAverageTotal / SPECTRUMSTEPS;
 }
+
+float calculateBaseline() {
+  // Get next sample
+  baselineSamples[baselineSampleIndex] = movingAvrg;
+
+  // Reset calibratedBaseline total
+  baselineTotal = 0.0f;
+  for (int i = 0; i < BASELINE_SAMPLE_COUNT; i++) {
+    // Add samples to calibratedBaseline total
+    baselineTotal += baselineSamples[i];
+  }
+  // calibratedBaseline is equal to the total of the samples divided by the amount of samples, i.e. the average
+  float bl = baselineTotal / BASELINE_SAMPLE_COUNT;
+
+  // Keep track of amount of samples gathered
+  baselineSampleIndex = baselineSampleIndex < BASELINE_SAMPLE_COUNT - 1 ? baselineSampleIndex + 1 : 0;
+
+  return bl;
+}
+
+// Find the distance and acceleration based on the two baselines
+void calculateDistAndAcc(float accelerationBaseline) {
+  distance = abs(movingAvrg - calibratedBaseline);
+  if (distance >= baselineTolerance) {
+    distance = abs(movingAvrg - calibratedBaseline) - baselineTolerance;
+  }
+  else {
+    distance = 0.0f;
+  }
+  
+  acceleration = abs(movingAvrg - accelerationBaseline);
+}
+
+void SmoothDistance() {
+  // subtract the last reading:
+  total -= readings[readIndex];
+  // read from the variable to be smoothed:
+  readings[readIndex] = distance;
+  // add the reading to the total:
+  total += readings[readIndex];
+  // advance to the next position in the array:
+  readIndex++;
+
+  // if we're at the end of the array...
+  if (readIndex >= numReadings) {
+    // ...wrap around to the beginning:
+    readIndex = 0;
+  }
+
+  // calculate the average:
+  averageDistance = total / numReadings;
+  // Serial.println(averageDistance);
+  delay(1); // delay in between reads for stability
+}
+
+/* I2C Functions */
+// Read data in to buffer with the offset in first element, so we can use it in sendData
+void receiveData(int byteCount) {
+  int counter = 0;
+  while (Wire.available()) {
+    receiveBuffer[counter] = Wire.read();
+    counter++;
+  }
+}
+
+void sendData() {
+  // If the buffer is set to 99, make some data
+  if (receiveBuffer[0] == 99) {
+    writeData(distance);
+  } 
+  else {
+    Serial.println("No function for this address");
+  }
+}
+
+// Write data
+void writeData(float newData) {
+  char dataString[8];
+  // Convert our data to a string/char[] with min length 5
+  dtostrf(newData, 5, 3, dataString);
+  Wire.write(dataString);
+}
+
+/* LED Functions */
 
 void showLight(float d) {
   if (distance > 5 && currentAnimation[0] == aniDark[0] && animationEnded) {
