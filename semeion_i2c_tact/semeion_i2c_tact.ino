@@ -66,15 +66,16 @@ bool isTweening;
 Tact Tact(TACT_MULTI);
 int SPECTRUMSTART = 73;
 const int SENSOR_ID = 3;
-const int SPECTRUMSTEPS = 12;
+const int SPECTRUMSTEPS = 22;
 const int SPECTRUMSTEPSIZE = 1;
 int spectrum[SPECTRUMSTEPS];
 
-// Tact - Average values
-const uint8_t AVRG_SAMPLE_COUNT = 2;
-int avrgCounterSamples[SPECTRUMSTEPS][AVRG_SAMPLE_COUNT];
-uint8_t avrgSampleIndex = 0;
-float movingAvrg = 0.0f; // a.k.a. MA
+// Tact - Peak averaging
+const uint8_t PEAK_SAMPLE_COUNT = 50;
+float peakSamples[PEAK_SAMPLE_COUNT];
+uint8_t peakSampleIndex = 0;
+float peakTotal = 0.0f; // the running peakTotal
+float peakAvrg = 0.0f; 
 
 // Tact - Calibration
 const uint8_t BASELINE_SAMPLE_COUNT = 5;
@@ -82,20 +83,13 @@ float baselineSamples[BASELINE_SAMPLE_COUNT];
 uint8_t baselineSampleIndex = 0;
 float baselineTotal = 0.0f;
 float calibratedBaseline = 0.0f;
+
 static float baselineTolerance = 1.75f; // How much "noise" can be tolerate from the calibratedBaseline?
 static long calibrateTime = 6000;
 
 // Tact - Meaningful values
 float distance = 0.0f;
 float acceleration = 0.0f;
-
-// Tact - Distance smoothing
-const int numDistReadings = 100;
-
-float distReadings[numDistReadings]; // the distReadings from the analog input
-uint8_t distReadIndex = 0; // the index of the current reading
-float distTotal = 0.0f; // the running distTotal
-float distAvrg = 0.0f; // the average
 
 /** I2C INITS
 
@@ -132,7 +126,7 @@ void setup() {
 void loop() {
   runTactSensor();
   if(millis() > calibrateTime) {
-    showLight(distAvrg);
+    showLight(distance);
   }
 }
 
@@ -144,70 +138,52 @@ void runTactSensor() {
   Tact.readSpectrum(SENSOR_ID, spectrum);
 
   // Keep track of how many samples we've gotten
-  avrgSampleIndex = avrgSampleIndex < AVRG_SAMPLE_COUNT - 1 ? avrgSampleIndex + 1 : 0;
+  // avrgSampleIndex = avrgSampleIndex < AVRG_SAMPLE_COUNT - 1 ? avrgSampleIndex + 1 : 0;
+  peakSampleIndex = peakSampleIndex < PEAK_SAMPLE_COUNT - 1 ? peakSampleIndex + 1 : 0;
 
   // Collect samples and calculate the MA from that
-  fillSamples();
-  calculateMovingAverage();
+  // fillSamples();
+  smoothPeaks();
 
   // Calibrate in the first 5 seconds
   if (millis() < calibrateTime) {
     calibratedBaseline = calculateBaseline();
     Serial.println("Calibrating");
     calculateDistAndAcc(calibratedBaseline);
-    smoothDistance();
   }
   // Else just keep calculating the dist and acceleration
   else {
     calculateDistAndAcc(calculateBaseline());
 
-    // Smooth the distance in the end
-    smoothDistance();
-
     // Serial.println(acceleration);
-    Serial.println(distAvrg);
-  }
-
-  // Serial.println(Tact.readBias(SENSOR_ID) + SPECTRUMSTART);
-}
-
-// Fill out our 2D array with spectrum samples
-void fillSamples() {
-  for (int i = 0; i < SPECTRUMSTEPS; i++) {
-    avrgCounterSamples[i][avrgSampleIndex] = spectrum[i];
+    Serial.println(distance);
   }
 }
 
-void calculateMovingAverage() {
-  int avrgdistTotalArr[SPECTRUMSTEPS];
-  float avrgArr[SPECTRUMSTEPS];
-  float tempAveragedistTotal = 0.0f;
+void smoothPeaks() {
+  // subtract the last reading:
+  peakTotal -= peakSamples[peakSampleIndex];
+  // read from the variable to be smoothed:
+  peakSamples[peakSampleIndex] = Tact.readPeak(SENSOR_ID);
+  // add the reading to the distTotal:
+  peakTotal += peakSamples[peakSampleIndex];
+  // advance to the next position in the array:
+  peakSampleIndex++;
 
-  // Get averages for each section of the spectrum
-  for (int i = 0; i < SPECTRUMSTEPS; i++) {
-    // Init the arrays to make sure they are 0
-    avrgdistTotalArr[i] = 0;
-    avrgArr[i] = 0.0f;
-
-    // Add up the distTotal avrg for this spectrum section
-    for (int j = 0; j < AVRG_SAMPLE_COUNT; j++) {
-      avrgdistTotalArr[i] += avrgCounterSamples[i][j];
-    }
-    // Divide by amount of samples in spectrum section to get average
-    avrgArr[i] = avrgdistTotalArr[i] / AVRG_SAMPLE_COUNT;
-
-    tempAveragedistTotal += avrgArr[i];
+  // if we're at the end of the array...
+  if (peakSampleIndex >= PEAK_SAMPLE_COUNT) {
+    // ...wrap around to the beginning:
+    peakSampleIndex = 0;
   }
 
-  // Reset moving average
-  movingAvrg = 0.0f;
-  // Divide our temporary distTotal of the averages with the amount of steps to get moving average
-  movingAvrg = tempAveragedistTotal / SPECTRUMSTEPS;
+  // calculate the average:
+  peakAvrg = peakTotal / PEAK_SAMPLE_COUNT;
+  delay(1); // delay in between reads for stability
 }
 
 float calculateBaseline() {
   // Get next sample
-  baselineSamples[baselineSampleIndex] = movingAvrg;
+  baselineSamples[baselineSampleIndex] = peakAvrg;
 
   // Reset calibratedBaseline distTotal
   baselineTotal = 0.0f;
@@ -226,36 +202,15 @@ float calculateBaseline() {
 
 // Find the distance and acceleration based on the two baselines
 void calculateDistAndAcc(float accelerationBaseline) {
-  distance = abs(movingAvrg - calibratedBaseline);
+  distance = abs(peakAvrg - calibratedBaseline);
   if (distance >= baselineTolerance) {
-    distance = abs(movingAvrg - calibratedBaseline) - baselineTolerance;
+    distance = abs(peakAvrg - calibratedBaseline) - baselineTolerance;
   }
   else {
     distance = 0.0f;
   }
   
-  acceleration = abs(movingAvrg - accelerationBaseline);
-}
-
-void smoothDistance() {
-  // subtract the last reading:
-  distTotal -= distReadings[distReadIndex];
-  // read from the variable to be smoothed:
-  distReadings[distReadIndex] = distance;
-  // add the reading to the distTotal:
-  distTotal += distReadings[distReadIndex];
-  // advance to the next position in the array:
-  distReadIndex++;
-
-  // if we're at the end of the array...
-  if (distReadIndex >= numDistReadings) {
-    // ...wrap around to the beginning:
-    distReadIndex = 0;
-  }
-
-  // calculate the average:
-  distAvrg = distTotal / numDistReadings;
-  delay(1); // delay in between reads for stability
+  acceleration = abs(peakAvrg - accelerationBaseline);
 }
 
 /* I2C Functions */
@@ -272,7 +227,7 @@ void receiveData(int byteCount) {
 void sendData() {
   // If the buffer is set to 99, make some data
   if (receiveBuffer[0] == 99) {
-    writeData(distAvrg);
+    writeData(distance);
   } 
   else {
     Serial.println("No function for this address");
