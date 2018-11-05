@@ -52,7 +52,7 @@ float t;
 long startTime;
 float duration;
 int iterator = 1;
-float lastInteractBrightness = 0;
+float lastBrightness = 0;
 
 // Animation decision tree variables
 bool shouldInteractWithHumans = false;
@@ -73,7 +73,10 @@ bool isTweening;
 
 // Timers 
 unsigned long actionTimer = 0;
-const unsigned long actionTimerDuration = 5000;
+const unsigned long actionTimerDuration = 15000;
+
+unsigned long shockTimer = 0;
+const unsigned long shockTimerDuration = 10000;
 
 /** TACT INITS
 
@@ -181,7 +184,7 @@ void runTactSensor() {
     calculateProxAndAcc(calculateBaseline());
 
     // Serial.println(acceleration);
-    Serial.println(proximity);
+    // Serial.println(proximity);
   }
 }
 
@@ -271,13 +274,26 @@ void writeData(float newData) {
 
 void showLight() {
 
+  // If humans move too fast, shock them
+  if(acceleration > shockAcc) {
+    shouldInteractWithHumans = false;
+    shockTimer = millis();
+    chargeCounter = 0;
+    memcpy(currentAnimation, aniShock, (5 * MAX_ANI + 1)*sizeof(float));
+  }
+
   // If humans are either not close enough or move too fast, stop reacting to them
-  if( (proximity <= closeProximity - closeProximity / 2 || acceleration > shockAcc) && shouldInteractWithHumans) {
+  if(proximity <= closeProximity - closeProximity / 2 && shouldInteractWithHumans) {
     shouldInteractWithHumans = false;
   }
 
+  // If we're idling, we should be able to jump out of animations immediately without waiting for the anim to end
+  if(currentAnimation[0] == aniIdleHigh[0] && proximity > closeProximity) {
+    shouldInteractWithHumans = true;
+  }
+
   float brightness = 0.0f;
-  if(!shouldInteractWithHumans) {
+  if(!shouldInteractWithHumans && millis() > shockTimer + shockTimerDuration) {
 
     if(readyToChangeAnimation) {
 
@@ -286,7 +302,8 @@ void showLight() {
       if(currentAnimation[0] == aniDark[0]) {
         // If we see a person close by, fade in
         if(proximity > closeProximity) {
-          memcpy(currentAnimation, aniAppearHigh, (5 * MAX_ANI + 1)*sizeof(float));
+          memcpy(currentAnimation, aniIdleHigh, (5 * MAX_ANI + 1)*sizeof(float));
+          shouldInteractWithHumans = true;
           actionTimer = millis();
         }
         else {
@@ -301,24 +318,13 @@ void showLight() {
 
       // 3. If we were idling
       else if(currentAnimation[0] == aniIdleHigh[0]) {
-        // If people left within the actionTimerDuration, fade out
+        // If people left and the actionTimer has gone off, fade out
         if(proximity <= closeProximity && millis() > actionTimer + actionTimerDuration) {
           memcpy(currentAnimation, aniFadeHigh, (5 * MAX_ANI + 1)*sizeof(float));
         }
-        // If people are still there
-        else if(proximity > closeProximity) {
-          actionTimer = millis();
-          // If people moved quickly, shock them
-          if(acceleration > shockAcc) {
-            memcpy(currentAnimation, aniShock, (5 * MAX_ANI + 1)*sizeof(float));
-          }
-          else {
-            shouldInteractWithHumans = true;
-          }
-        }
       }
 
-      // 4. At the end of shock, change to no animation
+      // 4. At the end of shock, change to no animation 
       else if(currentAnimation[0] == aniShock[0]) {
         memcpy(currentAnimation, aniDark, (5 * MAX_ANI + 1)*sizeof(float));
       }
@@ -328,7 +334,7 @@ void showLight() {
         memcpy(currentAnimation, aniDark, (5 * MAX_ANI + 1)*sizeof(float));
       }
 
-      // 6. If we are at a climax, go back to interacting with humans
+      // 6. If we are at a climax, go back to interacting with humans and set idle high as default
       else if(currentAnimation[0] == aniClimax[0]) {
         memcpy(currentAnimation, aniIdleHigh, (5 * MAX_ANI + 1)*sizeof(float));
         shouldInteractWithHumans = true;
@@ -342,8 +348,10 @@ void showLight() {
   }
 
   // If we are interacting with humans
-  // Not written as else, because then we won't go directly from climax to interaction
+  // Not written as else, because if so, we wouldn't go directly from one animation to interaction
   if(shouldInteractWithHumans) {
+    t = 0;
+    actionTimer = millis();
     chargeCounter++;
     // If humans have been interacting for a long time, and they're real close, then show a climax
     if(chargeCounter > chargeCounterThreshold && proximity >= touchProximity) {
@@ -357,9 +365,11 @@ void showLight() {
     }
   }
 
+  brightness = lerpFloat(lastBrightness, brightness, 0.2f);
   for (int i = 0; i < 4; i++) {
     leds[i] = CHSV( 224, 187, brightness * 225);
   }
+  lastBrightness = brightness;
 
   FastLED.show();
   delay(10);
@@ -370,8 +380,6 @@ float reactToProximity() {
   b = mapFloat(proximity, minProximity, maxProximity, 0.0f, 1.0f);
   b = min(1, b);
   b = max(0, b);
-  b = lerpFloat(b, lastInteractBrightness, 0.5f);
-  lastInteractBrightness = b;
   return b;
 }
 
