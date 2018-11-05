@@ -33,25 +33,36 @@ float currentAnimation[11];
 float incomingAnimation[11];
 
 //Predefined animations
-float aniDark[] = {1, 0, 0, 0, 0, 20.0, -99, 0, 0, 0, 0}; //-99 is used to terminate the reading of the array if all the curves are not defined.
-//float aniIdleHigh[] = {2, 0.8, 0.8, 1.23, 0.8, 100.0, -99, 0, 0, 0, 0};
-float aniIdleHigh[] = {2, 0.8, 0.8, 1.23, 0.8, 100.0, 0.8, 0.2, 0.2, 0.8, 60.0};
-float aniAppearHigh[] = {3, 0, 0.6, 1, 0.8, 50.0, -99, 0, 0, 0, 0};
-float aniFadeHigh[] = {4, 0.8, 0.2, 0, 0, 50.0, -99, 0, 0, 0, 0};
-//float aniMirror[];
-//float aniIdleLow[];
-//float aniClimax[];
-//float aniDisappearHide[];
-//float aniAppearLow[];
-//float aniRandomPause[];
-//float aniStimulation[];
+float aniDark[] = {0, 0.2, 0.1, 0.1, 0.2, 30.0, -99, 0, 0, 0, 0}; //-99 is used to terminate the reading of the array if all the curves are not defined.
+float aniIdleHigh[] = {1, 0.8, 0.8, 1.23, 0.8, 100.0, 0.8, 0.2, 0.2, 0.8, 60.0};
+float aniAppearHigh[] = {2, 0, 0.6, 1, 0.8, 50.0, -99, 0, 0, 0, 0};
+float aniFadeHigh[] = {3, 0.8, 0.2, 0, 0, 50.0, -99, 0, 0, 0, 0};
+float aniShock[] = {4, 0.0, 0.145, 0.185, 0.0, 100.0, -99, 0, 0, 0, 0};
+// float aniMirror[] = {5, 0.5, 1.195, 0.360, 0.715, 20.0, -99, 0, 0, 0, 0};
+float aniIdleLow[] = {6, 0.1, 1.195, 0.360, 0.1, 20.0, -99, 0, 0, 0, 0};
+float aniClimax[] = {7, 0.0, 1.145, 1.485, 0.0, 50.0, 0.0, 1.145, 1.485, 0.0, 250.0};
+float aniDisappearHide[] = {8, 0.8, 1.195, 0.360, 0.715, 20.0, -99, 0, 0, 0, 0};
+float aniAppearLow[] = {9, 0.0, 0.195, 0.360, 0.715, 20.0, -99, 0, 0, 0, 0};
+// float aniRandomPause[] = {10, 0.9, 1.195, 1.360, 0.715, 20.0, -99, 0, 0, 0, 0};
+// float aniStimulation[] = {11, 0.0, 1.195, 1.360, 0.715, 20.0, -99, 0, 0, 0, 0};
 
 //Animation variables
-bool animationEnded;
+bool readyToChangeAnimation;
 float t;
 long startTime;
 float duration;
 int iterator = 1;
+float lastInteractBrightness = 0;
+
+// Animation decision tree variables
+bool shouldInteractWithHumans = false;
+const uint8_t minProximity = 5;
+const uint8_t maxProximity = 12;
+const uint8_t closeProximity = 5;
+const uint8_t touchProximity = 15;
+const uint8_t shockAcc = 3;
+unsigned long chargeCounter = 0;
+const unsigned long chargeCounterThreshold = 500;
 
 //Tweening
 float tweenTime;
@@ -60,12 +71,16 @@ float targetY;
 float startY;
 bool isTweening;
 
+// Timers 
+unsigned long actionTimer = 0;
+const unsigned long actionTimerDuration = 5000;
+
 /** TACT INITS
 
 */
 Tact Tact(TACT_MULTI);
 int SPECTRUMSTART = 73;
-const int SENSOR_ID = 3;
+const int SENSOR_ID = 0;
 const int SPECTRUMSTEPS = 22;
 const int SPECTRUMSTEPSIZE = 1;
 int spectrum[SPECTRUMSTEPS];
@@ -88,7 +103,7 @@ static float baselineTolerance = 1.75f; // How much "noise" can be tolerate from
 static long calibrateTime = 6000;
 
 // Tact - Meaningful values
-float distance = 0.0f;
+float proximity = 0.0f;
 float acceleration = 0.0f;
 
 /** I2C INITS
@@ -126,8 +141,19 @@ void setup() {
 void loop() {
   runTactSensor();
   if(millis() > calibrateTime) {
-    showLight(distance);
+    showLight();
   }
+
+  /*if(millis() % 500 < 100) {
+    Serial.println("Anim\t\t\tInteract\t\tCharge\t\tProx");
+    Serial.print(currentAnimation[0]);
+    Serial.print("\t\t\t");
+    Serial.print(shouldInteractWithHumans);
+    Serial.print("\t\t\t");
+    Serial.print(chargeCounter);
+    Serial.print("\t\t");
+    Serial.println(proximity);
+  }*/
 }
 
 /* Tact Sensor functions */
@@ -141,22 +167,21 @@ void runTactSensor() {
   // avrgSampleIndex = avrgSampleIndex < AVRG_SAMPLE_COUNT - 1 ? avrgSampleIndex + 1 : 0;
   peakSampleIndex = peakSampleIndex < PEAK_SAMPLE_COUNT - 1 ? peakSampleIndex + 1 : 0;
 
-  // Collect samples and calculate the MA from that
-  // fillSamples();
+  // Collect samples and calculate the average from that
   smoothPeaks();
 
   // Calibrate in the first 5 seconds
   if (millis() < calibrateTime) {
     calibratedBaseline = calculateBaseline();
     Serial.println("Calibrating");
-    calculateDistAndAcc(calibratedBaseline);
+    calculateProxAndAcc(calibratedBaseline);
   }
   // Else just keep calculating the dist and acceleration
   else {
-    calculateDistAndAcc(calculateBaseline());
+    calculateProxAndAcc(calculateBaseline());
 
     // Serial.println(acceleration);
-    Serial.println(distance);
+    Serial.println(proximity);
   }
 }
 
@@ -200,14 +225,14 @@ float calculateBaseline() {
   return bl;
 }
 
-// Find the distance and acceleration based on the two baselines
-void calculateDistAndAcc(float accelerationBaseline) {
-  distance = abs(peakAvrg - calibratedBaseline);
-  if (distance >= baselineTolerance) {
-    distance = abs(peakAvrg - calibratedBaseline) - baselineTolerance;
+// Find the proximity and acceleration based on the two baselines
+void calculateProxAndAcc(float accelerationBaseline) {
+  proximity = abs(peakAvrg - calibratedBaseline);
+  if (proximity >= baselineTolerance) {
+    proximity = abs(peakAvrg - calibratedBaseline) - baselineTolerance;
   }
   else {
-    distance = 0.0f;
+    proximity = 0.0f;
   }
   
   acceleration = abs(peakAvrg - accelerationBaseline);
@@ -227,7 +252,7 @@ void receiveData(int byteCount) {
 void sendData() {
   // If the buffer is set to 99, make some data
   if (receiveBuffer[0] == 99) {
-    writeData(distance);
+    writeData(proximity);
   } 
   else {
     Serial.println("No function for this address");
@@ -244,25 +269,110 @@ void writeData(float newData) {
 
 /* LED Functions */
 
-void showLight(float d) {
-  if (d > 5 && currentAnimation[0] == aniDark[0] && animationEnded) {
-    memcpy(currentAnimation, aniAppearHigh, (5 * MAX_ANI + 1)*sizeof(float));
-  } else if ( currentAnimation[0] == aniAppearHigh[0] && animationEnded ) {
-    memcpy(currentAnimation, aniIdleHigh, (5 * MAX_ANI + 1)*sizeof(float));
-  } else if ( d <= 5 && currentAnimation[0] == aniIdleHigh[0] && animationEnded) {
-    memcpy(currentAnimation, aniFadeHigh, (5 * MAX_ANI + 1)*sizeof(float));
-  } else if ( currentAnimation[0] == aniFadeHigh[0] && animationEnded) {
-    memcpy(currentAnimation, aniDark, (5 * MAX_ANI + 1)*sizeof(float));
+void showLight() {
+
+  // If humans are either not close enough or move too fast, stop reacting to them
+  if( (proximity <= closeProximity - closeProximity / 2 || acceleration > shockAcc) && shouldInteractWithHumans) {
+    shouldInteractWithHumans = false;
   }
 
-  float b = animate(currentAnimation);
+  float brightness = 0.0f;
+  if(!shouldInteractWithHumans) {
+
+    if(readyToChangeAnimation) {
+
+      // DECISION TREE START
+      // 1. If we were not showing anything
+      if(currentAnimation[0] == aniDark[0]) {
+        // If we see a person close by, fade in
+        if(proximity > closeProximity) {
+          memcpy(currentAnimation, aniAppearHigh, (5 * MAX_ANI + 1)*sizeof(float));
+          actionTimer = millis();
+        }
+        else {
+          // pause(random)
+        }
+      }
+
+      // 2. When we have faded in, move to idling
+      else if(currentAnimation[0] == aniAppearHigh[0]) {
+        memcpy(currentAnimation, aniIdleHigh, (5 * MAX_ANI + 1)*sizeof(float));
+      }
+
+      // 3. If we were idling
+      else if(currentAnimation[0] == aniIdleHigh[0]) {
+        // If people left within the actionTimerDuration, fade out
+        if(proximity <= closeProximity && millis() > actionTimer + actionTimerDuration) {
+          memcpy(currentAnimation, aniFadeHigh, (5 * MAX_ANI + 1)*sizeof(float));
+        }
+        // If people are still there
+        else if(proximity > closeProximity) {
+          actionTimer = millis();
+          // If people moved quickly, shock them
+          if(acceleration > shockAcc) {
+            memcpy(currentAnimation, aniShock, (5 * MAX_ANI + 1)*sizeof(float));
+          }
+          else {
+            shouldInteractWithHumans = true;
+          }
+        }
+      }
+
+      // 4. At the end of shock, change to no animation
+      else if(currentAnimation[0] == aniShock[0]) {
+        memcpy(currentAnimation, aniDark, (5 * MAX_ANI + 1)*sizeof(float));
+      }
+
+      // 5. At the end of fading out, change to no animation
+      else if(currentAnimation[0] == aniFadeHigh[0]) {
+        memcpy(currentAnimation, aniDark, (5 * MAX_ANI + 1)*sizeof(float));
+      }
+
+      // 6. If we are at a climax, go back to interacting with humans
+      else if(currentAnimation[0] == aniClimax[0]) {
+        memcpy(currentAnimation, aniIdleHigh, (5 * MAX_ANI + 1)*sizeof(float));
+        shouldInteractWithHumans = true;
+        readyToChangeAnimation = true;
+      }
+      // DECISION TREE END
+
+    }
+
+    brightness = animate(currentAnimation);
+  }
+
+  // If we are interacting with humans
+  // Not written as else, because then we won't go directly from climax to interaction
+  if(shouldInteractWithHumans) {
+    chargeCounter++;
+    // If humans have been interacting for a long time, and they're real close, then show a climax
+    if(chargeCounter > chargeCounterThreshold && proximity >= touchProximity) {
+      memcpy(currentAnimation, aniClimax, (5 * MAX_ANI + 1)*sizeof(float));
+      chargeCounter = 0;
+      shouldInteractWithHumans = false;
+    }
+    // Being is not yet charged, so just mirror the "prox" to them in brightness
+    else {
+      brightness = reactToProximity();
+    }
+  }
 
   for (int i = 0; i < 4; i++) {
-    leds[i] = CHSV( 224, 187, b * 225);
+    leds[i] = CHSV( 224, 187, brightness * 225);
   }
 
   FastLED.show();
   delay(10);
+}
+
+float reactToProximity() {
+  float b = 0.0f;
+  b = mapFloat(proximity, minProximity, maxProximity, 0.0f, 1.0f);
+  b = min(1, b);
+  b = max(0, b);
+  b = lerpFloat(b, lastInteractBrightness, 0.5f);
+  lastInteractBrightness = b;
+  return b;
 }
 
 //Returns the value of point t on the animation that is passed.
@@ -281,11 +391,11 @@ float animate(float p[]) {
     iterator += 5;
     if (p[iterator] == -99 || iterator >= MAX_ANI * 5) {
       iterator = 1;
-      animationEnded = true;
+      readyToChangeAnimation = true;
     }
 
   } else {
-    animationEnded = false;
+    readyToChangeAnimation = false;
   }
 
   return y;
@@ -309,4 +419,13 @@ float tweenTo(float p[], float y) {
   }
     
   return startY += dy * easing;
+}
+
+// Utility
+float mapFloat(float x, float in_min, float in_max, float out_min, float out_max) {
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
+float lerpFloat(float x, float y, float lerpBy) {
+  return x - ((x - y) * lerpBy);
 }
