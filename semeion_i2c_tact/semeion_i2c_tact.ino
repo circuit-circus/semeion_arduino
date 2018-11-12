@@ -23,7 +23,7 @@
 /** LED
 
 */
-#define NUM_LEDS 25
+#define NUM_LEDS 83
 #define DATA_PIN 3
 #define MAX_ANI 2 //Maximum number of curves per animation
 CRGB leds [NUM_LEDS];
@@ -53,6 +53,7 @@ long startTime;
 float duration;
 int iterator = 1;
 float lastBrightness = 0;
+const float brightnessLerpSpeed = 0.2f;
 
 // Animation decision tree variables
 bool shouldInteractWithHumans = false;
@@ -136,8 +137,8 @@ void setup() {
     leds[i].setRGB( 0, 0, 0);
     FastLED.show();
   }
-
-  memcpy(currentAnimation, aniDark, 11 * sizeof(float));
+  
+  memcpy(currentAnimation, aniDark, (5 * MAX_ANI + 1)*sizeof(float));
   startTime = millis();
 }
 
@@ -146,21 +147,9 @@ void loop() {
   if(millis() > calibrateTime) {
     showLight();
   }
-
-  /*if(millis() % 500 < 100) {
-    Serial.println("Anim\t\t\tInteract\t\tCharge\t\tProx");
-    Serial.print(currentAnimation[0]);
-    Serial.print("\t\t\t");
-    Serial.print(shouldInteractWithHumans);
-    Serial.print("\t\t\t");
-    Serial.print(chargeCounter);
-    Serial.print("\t\t");
-    Serial.println(proximity);
-  }*/
 }
 
 /* Tact Sensor functions */
-
 void runTactSensor() {
   // read Spectrum for sensor
   // the spectrum array holds as many values as defined in SPECTRUMSTEPS
@@ -255,19 +244,21 @@ void receiveData(int byteCount) {
 void sendData() {
   // If the buffer is set to 99, make some data
   if (receiveBuffer[0] == 99) {
-    writeData(proximity);
+    writeData();
   } 
   else {
     Serial.println("No function for this address");
   }
 }
 
-// Write data
-void writeData(float newData) {
-  char dataString[8];
-  // Convert our data to a string/char[] with min length 5 
-  dtostrf(newData, 5, 3, dataString);
-  Wire.write(dataString);
+// Write data to RPi
+void writeData() {
+  String dataString = String(currentAnimation[0], 0);
+  dataString = dataString + String(proximity, 2);
+  dataString = dataString + String(acceleration, 2);
+  char dataCharArr[11];
+  dataString.toCharArray(dataCharArr, 11);
+  Wire.write(dataCharArr);
 }
 
 /* LED Functions */
@@ -283,12 +274,13 @@ void showLight() {
   }
 
   // If humans are either not close enough or move too fast, stop reacting to them
+  // TODO: This might jump back and forth, if the human is right in between being too close and too far away
   if(proximity <= closeProximity - closeProximity / 2 && shouldInteractWithHumans) {
     shouldInteractWithHumans = false;
   }
 
   // If we're idling, we should be able to jump out of animations immediately without waiting for the anim to end
-  if(currentAnimation[0] == aniIdleHigh[0] && proximity > closeProximity) {
+  if( (currentAnimation[0] == aniIdleHigh[0] || currentAnimation[0] == aniDark[0]) && proximity > closeProximity) {
     shouldInteractWithHumans = true;
   }
 
@@ -365,8 +357,8 @@ void showLight() {
     }
   }
 
-  brightness = lerpFloat(lastBrightness, brightness, 0.2f);
-  for (int i = 0; i < 4; i++) {
+  brightness = lerpFloat(lastBrightness, brightness, brightnessLerpSpeed);
+  for (int i = 0; i < NUM_LEDS; i++) {
     leds[i] = CHSV( 224, 187, brightness * 225);
   }
   lastBrightness = brightness;
