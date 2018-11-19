@@ -84,20 +84,20 @@ const unsigned long shockTimerDuration = 10000;
 */
 Tact Tact(TACT_MULTI);
 int SPECTRUMSTART = 73;
-const int SENSOR_ID = 0;
+const int SENSOR_ID = 3;
 const int SPECTRUMSTEPS = 22;
 const int SPECTRUMSTEPSIZE = 1;
 int spectrum[SPECTRUMSTEPS];
 
 // Tact - Peak averaging
-const uint8_t PEAK_SAMPLE_COUNT = 50;
+const uint8_t PEAK_SAMPLE_COUNT = 75;
 float peakSamples[PEAK_SAMPLE_COUNT];
 uint8_t peakSampleIndex = 0;
 float peakTotal = 0.0f; // the running peakTotal
 float peakAvrg = 0.0f; 
 
 // Tact - Calibration
-const uint8_t BASELINE_SAMPLE_COUNT = 5;
+const uint8_t BASELINE_SAMPLE_COUNT = 10;
 float baselineSamples[BASELINE_SAMPLE_COUNT];
 uint8_t baselineSampleIndex = 0;
 float baselineTotal = 0.0f;
@@ -131,7 +131,7 @@ void setup() {
   Wire.onRequest(sendData);
 
   // Start FastLED
-  FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);
+  FastLED.addLeds<WS2812B, DATA_PIN>(leds, NUM_LEDS);
 
   for(uint8_t i = 0; i < NUM_LEDS; i++) {
     leds[i].setRGB( 0, 0, 0);
@@ -173,7 +173,7 @@ void runTactSensor() {
     calculateProxAndAcc(calculateBaseline());
 
     // Serial.println(acceleration);
-    // Serial.println(proximity);
+    Serial.println(proximity);
   }
 }
 
@@ -251,14 +251,21 @@ void sendData() {
   }
 }
 
+const int charArrSize = 13;
 // Write data to RPi
 void writeData() {
   String dataString = String(currentAnimation[0], 0);
-  dataString = dataString + String(proximity, 2);
-  dataString = dataString + String(acceleration, 2);
-  char dataCharArr[11];
-  dataString.toCharArray(dataCharArr, 11);
-  Wire.write(dataCharArr);
+  dataString = dataString + String(',');
+  dataString = dataString + String(proximity, 1);
+  dataString = dataString + String(',');
+  dataString = dataString + String(acceleration, 1);
+  dataString = dataString + String(',');
+  dataString = dataString + String(chargeCounter);
+  dataString.trim();
+
+  char dataCharArr[charArrSize];
+  dataString.toCharArray(dataCharArr, charArrSize);
+  Wire.write(dataCharArr, charArrSize);
 }
 
 /* LED Functions */
@@ -273,13 +280,19 @@ void showLight() {
     memcpy(currentAnimation, aniShock, (5 * MAX_ANI + 1)*sizeof(float));
   }
 
+  /*Serial.print(currentAnimation[0]);
+  Serial.print("/");
+  Serial.print(shouldInteractWithHumans);
+  Serial.print("/");
+  Serial.println(readyToChangeAnimation);*/
+
   // If humans are either not close enough or move too fast, stop reacting to them
   // TODO: This might jump back and forth, if the human is right in between being too close and too far away
   if(proximity <= closeProximity - closeProximity / 2 && shouldInteractWithHumans) {
     shouldInteractWithHumans = false;
   }
 
-  // If we're idling, we should be able to jump out of animations immediately without waiting for the anim to end
+  // If we're idling, we jump out of animations immediately without waiting for the anim to end
   if( (currentAnimation[0] == aniIdleHigh[0] || currentAnimation[0] == aniDark[0]) && proximity > closeProximity) {
     shouldInteractWithHumans = true;
   }
@@ -359,7 +372,7 @@ void showLight() {
 
   brightness = lerpFloat(lastBrightness, brightness, brightnessLerpSpeed);
   for (int i = 0; i < NUM_LEDS; i++) {
-    leds[i] = CHSV( 224, 187, brightness * 225);
+    leds[i] = CHSV( 224, 187, min(255, 25 + brightness * 225));
   }
   lastBrightness = brightness;
 
