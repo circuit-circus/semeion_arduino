@@ -23,7 +23,7 @@
 /** LED
 
 */
-#define NUM_LEDS 83
+#define NUM_LEDS 25
 #define DATA_PIN 3
 #define MAX_ANI 2 //Maximum number of curves per animation
 CRGB leds [NUM_LEDS];
@@ -53,7 +53,8 @@ long startTime;
 float duration;
 int iterator = 1;
 float lastBrightness = 0;
-const float brightnessLerpSpeed = 0.2f;
+const float normalBrightnessLerpSpeed = 0.2f;
+const float reactBrightnessLerpSpeed = 0.075f;
 
 // Animation decision tree variables
 bool shouldInteractWithHumans = false;
@@ -62,8 +63,8 @@ const uint8_t maxProximity = 12;
 const uint8_t closeProximity = 5;
 const uint8_t touchProximity = 15;
 const uint8_t shockAcc = 3;
-unsigned long chargeCounter = 0;
-const unsigned long chargeCounterThreshold = 500;
+volatile unsigned int chargeCounter = 0;
+const unsigned int chargeCounterThreshold = 500;
 
 //Tweening
 float tweenTime;
@@ -87,14 +88,13 @@ int SPECTRUMSTART = 73;
 const int SENSOR_ID = 3;
 const int SPECTRUMSTEPS = 22;
 const int SPECTRUMSTEPSIZE = 1;
-int spectrum[SPECTRUMSTEPS];
 
 // Tact - Peak averaging
 const uint8_t PEAK_SAMPLE_COUNT = 75;
 float peakSamples[PEAK_SAMPLE_COUNT];
 uint8_t peakSampleIndex = 0;
 float peakTotal = 0.0f; // the running peakTotal
-float peakAvrg = 0.0f; 
+float peakAvrg = 0.0f;
 
 // Tact - Calibration
 const uint8_t BASELINE_SAMPLE_COUNT = 10;
@@ -103,7 +103,7 @@ uint8_t baselineSampleIndex = 0;
 float baselineTotal = 0.0f;
 float calibratedBaseline = 0.0f;
 
-static float baselineTolerance = 1.75f; // How much "noise" can be tolerate from the calibratedBaseline?
+static float baselineTolerance = 5.0f; // How much "noise" can we tolerate from the calibratedBaseline?
 static long calibrateTime = 6000;
 
 // Tact - Meaningful values
@@ -114,9 +114,13 @@ float acceleration = 0.0f;
 
 */
 #define SLAVE_ADDRESS 0x08
-
-// 10 byte data buffer
+// We store the data we receive here
 int receiveBuffer[9];
+// I2C comms uses interrupts, which means we might try to read a var while it is being changed
+// so we also store these values as unsigned 8-bit integers, because they can be kept safe from change with the volatile keyword
+volatile uint8_t i2cProx = 0;
+volatile uint8_t i2cAcc = 0;
+volatile uint8_t i2cAnim = 0;
 
 void setup() {
   Serial.begin(9600);
@@ -151,10 +155,6 @@ void loop() {
 
 /* Tact Sensor functions */
 void runTactSensor() {
-  // read Spectrum for sensor
-  // the spectrum array holds as many values as defined in SPECTRUMSTEPS
-  Tact.readSpectrum(SENSOR_ID, spectrum);
-
   // Keep track of how many samples we've gotten
   // avrgSampleIndex = avrgSampleIndex < AVRG_SAMPLE_COUNT - 1 ? avrgSampleIndex + 1 : 0;
   peakSampleIndex = peakSampleIndex < PEAK_SAMPLE_COUNT - 1 ? peakSampleIndex + 1 : 0;
@@ -162,7 +162,7 @@ void runTactSensor() {
   // Collect samples and calculate the average from that
   smoothPeaks();
 
-  // Calibrate in the first 5 seconds
+  // Calibrate in the first period
   if (millis() < calibrateTime) {
     calibratedBaseline = calculateBaseline();
     Serial.println("Calibrating");
@@ -204,7 +204,7 @@ float calculateBaseline() {
 
   // Reset calibratedBaseline distTotal
   baselineTotal = 0.0f;
-  for (int i = 0; i < BASELINE_SAMPLE_COUNT; i++) {
+  for (uint8_t i = 0; i < BASELINE_SAMPLE_COUNT; i++) {
     // Add samples to calibratedBaseline distTotal
     baselineTotal += baselineSamples[i];
   }
@@ -228,6 +228,9 @@ void calculateProxAndAcc(float accelerationBaseline) {
   }
   
   acceleration = abs(peakAvrg - accelerationBaseline);
+
+  i2cProx = (uint8_t) proximity;
+  i2cAcc = (uint8_t) acceleration;
 }
 
 /* I2C Functions */
@@ -254,11 +257,11 @@ void sendData() {
 const int charArrSize = 13;
 // Write data to RPi
 void writeData() {
-  String dataString = String(currentAnimation[0], 0);
+  String dataString = String(i2cAnim);
   dataString = dataString + String(',');
-  dataString = dataString + String(proximity, 1);
+  dataString = dataString + String(i2cProx);
   dataString = dataString + String(',');
-  dataString = dataString + String(acceleration, 1);
+  dataString = dataString + String(i2cAcc);
   dataString = dataString + String(',');
   dataString = dataString + String(chargeCounter);
   dataString.trim();
@@ -280,12 +283,6 @@ void showLight() {
     memcpy(currentAnimation, aniShock, (5 * MAX_ANI + 1)*sizeof(float));
   }
 
-  /*Serial.print(currentAnimation[0]);
-  Serial.print("/");
-  Serial.print(shouldInteractWithHumans);
-  Serial.print("/");
-  Serial.println(readyToChangeAnimation);*/
-
   // If humans are either not close enough or move too fast, stop reacting to them
   // TODO: This might jump back and forth, if the human is right in between being too close and too far away
   if(proximity <= closeProximity - closeProximity / 2 && shouldInteractWithHumans) {
@@ -298,6 +295,7 @@ void showLight() {
   }
 
   float brightness = 0.0f;
+
   if(!shouldInteractWithHumans && millis() > shockTimer + shockTimerDuration) {
 
     if(readyToChangeAnimation) {
@@ -349,6 +347,8 @@ void showLight() {
 
     }
 
+    i2cAnim = (uint8_t) currentAnimation[0];
+
     brightness = animate(currentAnimation);
   }
 
@@ -357,7 +357,7 @@ void showLight() {
   if(shouldInteractWithHumans) {
     t = 0;
     actionTimer = millis();
-    chargeCounter++;
+    chargeCounter = (chargeCounter == chargeCounterThreshold ? chargeCounterThreshold : chargeCounter += 1);
     // If humans have been interacting for a long time, and they're real close, then show a climax
     if(chargeCounter > chargeCounterThreshold && proximity >= touchProximity) {
       memcpy(currentAnimation, aniClimax, (5 * MAX_ANI + 1)*sizeof(float));
@@ -370,14 +370,25 @@ void showLight() {
     }
   }
 
-  brightness = lerpFloat(lastBrightness, brightness, brightnessLerpSpeed);
+  if(!shouldInteractWithHumans) {
+    brightness = lerpFloat(lastBrightness, brightness, normalBrightnessLerpSpeed);
+  }
+  else {
+    brightness = lerpFloat(lastBrightness, brightness, reactBrightnessLerpSpeed);
+  }
+
   for (int i = 0; i < NUM_LEDS; i++) {
     leds[i] = CHSV( 224, 187, min(255, 25 + brightness * 225));
   }
   lastBrightness = brightness;
 
   FastLED.show();
-  delay(10);
+  if(!shouldInteractWithHumans) {
+    delay(10);
+  }
+  else {
+    delay(1);
+  }
 }
 
 float reactToProximity() {
