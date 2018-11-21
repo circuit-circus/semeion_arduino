@@ -53,7 +53,7 @@ long startTime;
 float duration;
 int iterator = 1;
 float lastBrightness = 0;
-const float normalBrightnessLerpSpeed = 0.2f;
+const float animBrightnessLerpSpeed = 0.2f;
 const float reactBrightnessLerpSpeed = 0.075f;
 
 // Animation decision tree variables
@@ -116,6 +116,7 @@ float acceleration = 0.0f;
 #define SLAVE_ADDRESS 0x08
 // We store the data we receive here
 int receiveBuffer[9];
+const int i2cWriteDataSize = 13;
 // I2C comms uses interrupts, which means we might try to read a var while it is being changed
 // so we also store these values as unsigned 8-bit integers, because they can be kept safe from change with the volatile keyword
 volatile uint8_t i2cProx = 0;
@@ -153,7 +154,11 @@ void loop() {
   }
 }
 
-/* Tact Sensor functions */
+/**
+ * Runs all the functions needed from the Tact sensor including creating a calibrated baseline in the first period.
+ * After calibration, it continuously calculates the proximity and acceleration of a person's movements and stores it in variables
+ * 
+ */
 void runTactSensor() {
   // Keep track of how many samples we've gotten
   // avrgSampleIndex = avrgSampleIndex < AVRG_SAMPLE_COUNT - 1 ? avrgSampleIndex + 1 : 0;
@@ -177,6 +182,10 @@ void runTactSensor() {
   }
 }
 
+/**
+ * Reads the peak of the Tact sensor spectrum, and smooths that reading out continuously to create an average over time
+ * Based on this tutorial: https://www.arduino.cc/en/Tutorial/Smoothing
+ */
 void smoothPeaks() {
   // subtract the last reading:
   peakTotal -= peakSamples[peakSampleIndex];
@@ -198,17 +207,21 @@ void smoothPeaks() {
   delay(1); // delay in between reads for stability
 }
 
+/**
+ * Calculates the baseline, which is essentially an average of the average
+ * @return A float which represents the baseline
+ */
 float calculateBaseline() {
   // Get next sample
   baselineSamples[baselineSampleIndex] = peakAvrg;
 
-  // Reset calibratedBaseline distTotal
+  // Reset calibratedBaseline total
   baselineTotal = 0.0f;
   for (uint8_t i = 0; i < BASELINE_SAMPLE_COUNT; i++) {
-    // Add samples to calibratedBaseline distTotal
+    // Add samples to calibratedBaseline total
     baselineTotal += baselineSamples[i];
   }
-  // calibratedBaseline is equal to the distTotal of the samples divided by the amount of samples, i.e. the average
+  // calibratedBaseline is equal to the total of the samples divided by the amount of samples, i.e. the average
   float bl = baselineTotal / BASELINE_SAMPLE_COUNT;
 
   // Keep track of amount of samples gathered
@@ -217,7 +230,13 @@ float calculateBaseline() {
   return bl;
 }
 
-// Find the proximity and acceleration based on the two baselines
+/**
+ * Calculates proximity and acceleration of a person's movements
+ * Proximity is simply the distance from the baseline,
+ * while the acceleration is the distance from a constantly updated baseline
+ * Also saves our prox and acc as uint8_t so we can keep them safe in I2C transfers
+ * @param accelerationBaseline A baseline of the recent readings, which is then used to find the acceleration
+ */
 void calculateProxAndAcc(float accelerationBaseline) {
   proximity = abs(peakAvrg - calibratedBaseline);
   if (proximity >= baselineTolerance) {
@@ -234,8 +253,11 @@ void calculateProxAndAcc(float accelerationBaseline) {
 }
 
 /* I2C Functions */
-
-// Read data in to buffer with the offset in first element, so we can use it in sendData
+/**
+ * Read the data incoming from I2C with the offset being placed in the zero index of the receiveBuffer
+ * This is used in both reading and writing operations
+ * @param byteCount How many bytes have we received (default param in Wire library)
+ */
 void receiveData(int byteCount) {
   int counter = 0;
   while (Wire.available()) {
@@ -244,6 +266,9 @@ void receiveData(int byteCount) {
   }
 }
 
+/**
+ * React to the data that we have received depending on what we received
+ */
 void sendData() {
   // If the buffer is set to 99, make some data
   if (receiveBuffer[0] == 99) {
@@ -254,8 +279,9 @@ void sendData() {
   }
 }
 
-const int charArrSize = 13;
-// Write data to RPi
+/**
+ * Put together the data we want to send as a string, convert to char array and then write it
+ */
 void writeData() {
   String dataString = String(i2cAnim);
   dataString = dataString + String(',');
@@ -266,13 +292,15 @@ void writeData() {
   dataString = dataString + String(chargeCounter);
   dataString.trim();
 
-  char dataCharArr[charArrSize];
-  dataString.toCharArray(dataCharArr, charArrSize);
-  Wire.write(dataCharArr, charArrSize);
+  char dataCharArr[i2cWriteDataSize];
+  dataString.toCharArray(dataCharArr, i2cWriteDataSize);
+  Wire.write(dataCharArr, i2cWriteDataSize);
 }
 
 /* LED Functions */
-
+/**
+ * Basically a decision tree that finds the correct animation depending on a lot of factors, like previous anim, acceleration, proximity
+ */
 void showLight() {
 
   // If humans move too fast, shock them
@@ -295,11 +323,10 @@ void showLight() {
   }
 
   float brightness = 0.0f;
-
+  // Only engage in decision tree, if we are neither shocked nor interacting with humans
   if(!shouldInteractWithHumans && millis() > shockTimer + shockTimerDuration) {
-
+    // Only engage in decision tree, if we are ready to do so
     if(readyToChangeAnimation) {
-
       // DECISION TREE START
       // 1. If we were not showing anything
       if(currentAnimation[0] == aniDark[0]) {
@@ -308,9 +335,6 @@ void showLight() {
           memcpy(currentAnimation, aniIdleHigh, (5 * MAX_ANI + 1)*sizeof(float));
           shouldInteractWithHumans = true;
           actionTimer = millis();
-        }
-        else {
-          // pause(random)
         }
       }
 
@@ -347,42 +371,51 @@ void showLight() {
 
     }
 
+    // Save our current animation as an I2C-safe variable
     i2cAnim = (uint8_t) currentAnimation[0];
-
+    // Figure out what the next step in our animation looks like
     brightness = animate(currentAnimation);
   }
 
   // If we are interacting with humans
   // Not written as else, because if so, we wouldn't go directly from one animation to interaction
   if(shouldInteractWithHumans) {
+    // Reset animation time, so we start from the beginning next time we animate
     t = 0;
+    // This is when we last saw action, so save this moment
     actionTimer = millis();
+    // Increase charge counter, if it's less than the threshold
     chargeCounter = (chargeCounter == chargeCounterThreshold ? chargeCounterThreshold : chargeCounter += 1);
-    // If humans have been interacting for a long time, and they're real close, then show a climax
-    if(chargeCounter > chargeCounterThreshold && proximity >= touchProximity) {
+
+    // If humans have been interacting for a long enough time, and they're real close, then show a climax
+    if(chargeCounter >= chargeCounterThreshold && proximity >= touchProximity) {
       memcpy(currentAnimation, aniClimax, (5 * MAX_ANI + 1)*sizeof(float));
       chargeCounter = 0;
       shouldInteractWithHumans = false;
     }
-    // Being is not yet charged, so just mirror the "prox" to them in brightness
+    // If being is not yet charged, then just mirror the "prox" to them in brightness
     else {
       brightness = reactToProximity();
     }
   }
 
+  // Be sure to lerp the brightness, so we get smooth transitions
+  // Use different lerps when we react to proximity and animation for optimal looks
   if(!shouldInteractWithHumans) {
-    brightness = lerpFloat(lastBrightness, brightness, normalBrightnessLerpSpeed);
+    brightness = lerpFloat(lastBrightness, brightness, animBrightnessLerpSpeed);
   }
   else {
     brightness = lerpFloat(lastBrightness, brightness, reactBrightnessLerpSpeed);
   }
 
+  // Write the values to the LEDs, and save the brightness we have just used
   for (int i = 0; i < NUM_LEDS; i++) {
     leds[i] = CHSV( 224, 187, min(255, 25 + brightness * 225));
   }
   lastBrightness = brightness;
-
   FastLED.show();
+
+  // Use different delays depending on what kind of brightness we are showing
   if(!shouldInteractWithHumans) {
     delay(10);
   }
@@ -391,6 +424,10 @@ void showLight() {
   }
 }
 
+/**
+ * Map the proximity from our determined minimums and maximums to a value between 0 and 1
+ * @return A float that equals the brightness between 0 and 1
+ */
 float reactToProximity() {
   float b = 0.0f;
   b = mapFloat(proximity, minProximity, maxProximity, 0.0f, 1.0f);
@@ -399,7 +436,11 @@ float reactToProximity() {
   return b;
 }
 
-//Returns the value of point t on the animation that is passed.
+/**
+ * Calculates the y value of a bezier curve, which is defined as a float array
+ * @param p A float array containing the points of the bezier curve
+ * @return The value of point t on the animation that is passed.
+ */
 float animate(float p[]) {
   float y = 0;
 
@@ -425,31 +466,27 @@ float animate(float p[]) {
   return y;
 }
 
-/** NOT TESTED **/
-//Tweening function to tween when a new animation is started before the first one is finished.
-float tweenTo(float p[], float y) {
-  if (!isTweening) {
-    startY = y;
-    isTweening = true;
-  }
-  targetY = animate(p);
-
-  float dy = targetY - startY;
-
-  if (startY == targetY) {
-    isTweening = false;
-  } else {
-    isTweening = true;
-  }
-    
-  return startY += dy * easing;
-}
-
 // Utility
+/**
+ * Map a float, since Arduino can only do it with ints out of the box
+ * @param x The float to lerp
+ * @param in_min The minimum of the current range
+ * @param in_max The maximum of the current range
+ * @param out_min The minimum of the desired range
+ * @param out_max The maximum of the desired range
+ * @return A mapped float 
+ */
 float mapFloat(float x, float in_min, float in_max, float out_min, float out_max) {
   return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
+/**
+ * Calculates a number between two numbers at a specific increment.
+ * @param x The first number
+ * @param y The second number
+ * @param lerpBy The amount to interpolate between the two values where 0.0 = x, 1.0 = y, and 0.5 is half-way in between. 
+ * @return A lerped float
+ */
 float lerpFloat(float x, float y, float lerpBy) {
   return x - ((x - y) * lerpBy);
 }
