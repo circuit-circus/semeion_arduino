@@ -61,10 +61,10 @@ bool shouldInteractWithHumans = false;
 const uint8_t minProximity = 5;
 const uint8_t maxProximity = 12;
 const uint8_t closeProximity = 5;
-const uint8_t touchProximity = 15;
+const uint8_t touchProximity = 19;
 const uint8_t shockAcc = 3;
 volatile unsigned int chargeCounter = 0;
-const unsigned int chargeCounterThreshold = 500;
+const unsigned int chargeCounterThreshold = 1000;
 
 //Tweening
 float tweenTime;
@@ -78,7 +78,7 @@ unsigned long actionTimer = 0;
 const unsigned long actionTimerDuration = 15000;
 
 unsigned long shockTimer = 0;
-const unsigned long shockTimerDuration = 10000;
+const unsigned long shockTimerDuration = 5000;
 
 /** TACT INITS
 
@@ -116,12 +116,14 @@ float acceleration = 0.0f;
 #define SLAVE_ADDRESS 0x08
 // We store the data we receive here
 int receiveBuffer[9];
-const int i2cWriteDataSize = 13;
+const int i2cWriteDataSize = 16;
 // I2C comms uses interrupts, which means we might try to read a var while it is being changed
 // so we also store these values as unsigned 8-bit integers, because they can be kept safe from change with the volatile keyword
+volatile uint8_t i2cState = 0;
 volatile uint8_t i2cProx = 0;
 volatile uint8_t i2cAcc = 0;
-volatile uint8_t i2cAnim = 0;
+volatile bool shouldBeShocked = false;
+volatile bool shouldBeClimaxed = false;
 
 void setup() {
   Serial.begin(9600);
@@ -151,6 +153,7 @@ void loop() {
   runTactSensor();
   if(millis() > calibrateTime) {
     showLight();
+    reactToI2CData();
   }
 }
 
@@ -178,7 +181,7 @@ void runTactSensor() {
     calculateProxAndAcc(calculateBaseline());
 
     // Serial.println(acceleration);
-    Serial.println(proximity);
+    // Serial.println(proximity);
   }
 }
 
@@ -264,13 +267,28 @@ void receiveData(int byteCount) {
     receiveBuffer[counter] = Wire.read();
     counter++;
   }
+
+  // We use the offset 98, when we write
+  if(receiveBuffer[0] == 98) {
+    switch(receiveBuffer[1]) {
+      // Climax
+      case 3:
+        shouldBeClimaxed = true;
+        break;
+      // Shocked
+      case 4:
+        shouldBeShocked = true;
+      default:
+        break;
+    }
+  }
 }
 
 /**
  * React to the data that we have received depending on what we received
  */
 void sendData() {
-  // If the buffer is set to 99, make some data
+  // If the buffer is set to 99, we have to write some data back
   if (receiveBuffer[0] == 99) {
     writeData();
   } 
@@ -283,7 +301,7 @@ void sendData() {
  * Put together the data we want to send as a string, convert to char array and then write it
  */
 void writeData() {
-  String dataString = String(i2cAnim);
+  String dataString = String(i2cState);
   dataString = dataString + String(',');
   dataString = dataString + String(i2cProx);
   dataString = dataString + String(',');
@@ -297,6 +315,21 @@ void writeData() {
   Wire.write(dataCharArr, i2cWriteDataSize);
 }
 
+/**
+ * When data is written to the ATMega, we note down what to do
+ * Then we do that thing when we're sure that data is not corrupted from I2C interrupts
+ */
+void reactToI2CData() {
+  if(shouldBeShocked) {
+    getShocked();
+    shouldBeShocked = false;
+  }
+  if(shouldBeClimaxed) {
+    getClimaxed();
+    shouldBeClimaxed = false;
+  }
+}
+
 /* LED Functions */
 /**
  * Basically a decision tree that finds the correct animation depending on a lot of factors, like previous anim, acceleration, proximity
@@ -305,10 +338,7 @@ void showLight() {
 
   // If humans move too fast, shock them
   if(acceleration > shockAcc) {
-    shouldInteractWithHumans = false;
-    shockTimer = millis();
-    chargeCounter = 0;
-    memcpy(currentAnimation, aniShock, (5 * MAX_ANI + 1)*sizeof(float));
+    getShocked();
   }
 
   // If humans are either not close enough or move too fast, stop reacting to them
@@ -327,59 +357,24 @@ void showLight() {
   if(!shouldInteractWithHumans && millis() > shockTimer + shockTimerDuration) {
     // Only engage in decision tree, if we are ready to do so
     if(readyToChangeAnimation) {
-      // DECISION TREE START
-      // 1. If we were not showing anything
-      if(currentAnimation[0] == aniDark[0]) {
-        // If we see a person close by, fade in
-        if(proximity > closeProximity) {
-          memcpy(currentAnimation, aniIdleHigh, (5 * MAX_ANI + 1)*sizeof(float));
-          shouldInteractWithHumans = true;
-          actionTimer = millis();
-        }
-      }
-
-      // 2. When we have faded in, move to idling
-      else if(currentAnimation[0] == aniAppearHigh[0]) {
-        memcpy(currentAnimation, aniIdleHigh, (5 * MAX_ANI + 1)*sizeof(float));
-      }
-
-      // 3. If we were idling
-      else if(currentAnimation[0] == aniIdleHigh[0]) {
-        // If people left and the actionTimer has gone off, fade out
-        if(proximity <= closeProximity && millis() > actionTimer + actionTimerDuration) {
-          memcpy(currentAnimation, aniFadeHigh, (5 * MAX_ANI + 1)*sizeof(float));
-        }
-      }
-
-      // 4. At the end of shock, change to no animation 
-      else if(currentAnimation[0] == aniShock[0]) {
-        memcpy(currentAnimation, aniDark, (5 * MAX_ANI + 1)*sizeof(float));
-      }
-
-      // 5. At the end of fading out, change to no animation
-      else if(currentAnimation[0] == aniFadeHigh[0]) {
-        memcpy(currentAnimation, aniDark, (5 * MAX_ANI + 1)*sizeof(float));
-      }
-
-      // 6. If we are at a climax, go back to interacting with humans and set idle high as default
-      else if(currentAnimation[0] == aniClimax[0]) {
-        memcpy(currentAnimation, aniIdleHigh, (5 * MAX_ANI + 1)*sizeof(float));
-        shouldInteractWithHumans = true;
-        readyToChangeAnimation = true;
-      }
-      // DECISION TREE END
-
+      decideOnAnimation();
     }
 
-    // Save our current animation as an I2C-safe variable
-    i2cAnim = (uint8_t) currentAnimation[0];
     // Figure out what the next step in our animation looks like
     brightness = animate(currentAnimation);
+  }
+
+  if(currentAnimation[0] == aniDark[0]) {
+    i2cState = 0;
+  }
+  else if(currentAnimation[0] == aniIdleHigh[0]) {
+    i2cState = 1;
   }
 
   // If we are interacting with humans
   // Not written as else, because if so, we wouldn't go directly from one animation to interaction
   if(shouldInteractWithHumans) {
+    i2cState = 2;
     // Reset animation time, so we start from the beginning next time we animate
     t = 0;
     // This is when we last saw action, so save this moment
@@ -389,9 +384,7 @@ void showLight() {
 
     // If humans have been interacting for a long enough time, and they're real close, then show a climax
     if(chargeCounter >= chargeCounterThreshold && proximity >= touchProximity) {
-      memcpy(currentAnimation, aniClimax, (5 * MAX_ANI + 1)*sizeof(float));
-      chargeCounter = 0;
-      shouldInteractWithHumans = false;
+      getClimaxed();
     }
     // If being is not yet charged, then just mirror the "prox" to them in brightness
     else {
@@ -422,6 +415,73 @@ void showLight() {
   else {
     delay(1);
   }
+}
+
+/**
+ * A decision tree that finds the appropriate next animation 
+ */
+void decideOnAnimation() {
+  // 1. If we were not showing anything
+  if(currentAnimation[0] == aniDark[0]) {
+    // If we see a person close by, fade in
+    if(proximity > closeProximity) {
+      memcpy(currentAnimation, aniIdleHigh, (5 * MAX_ANI + 1)*sizeof(float));
+      shouldInteractWithHumans = true;
+      actionTimer = millis();
+    }
+  }
+
+  // 2. When we have faded in, move to idling
+  else if(currentAnimation[0] == aniAppearHigh[0]) {
+    memcpy(currentAnimation, aniIdleHigh, (5 * MAX_ANI + 1)*sizeof(float));
+  }
+
+  // 3. If we were idling
+  else if(currentAnimation[0] == aniIdleHigh[0]) {
+    // If people left and the actionTimer has gone off, fade out
+    if(proximity <= closeProximity && millis() > actionTimer + actionTimerDuration) {
+      memcpy(currentAnimation, aniFadeHigh, (5 * MAX_ANI + 1)*sizeof(float));
+    }
+  }
+
+  // 4. At the end of shock, change to no animation 
+  else if(currentAnimation[0] == aniShock[0]) {
+    memcpy(currentAnimation, aniDark, (5 * MAX_ANI + 1)*sizeof(float));
+  }
+
+  // 5. At the end of fading out, change to no animation
+  else if(currentAnimation[0] == aniFadeHigh[0]) {
+    memcpy(currentAnimation, aniDark, (5 * MAX_ANI + 1)*sizeof(float));
+  }
+
+  // 6. If we are at a climax, go back to interacting with humans and set idle high as default
+  else if(currentAnimation[0] == aniClimax[0]) {
+    Serial.println("Climax!");
+    memcpy(currentAnimation, aniIdleHigh, (5 * MAX_ANI + 1)*sizeof(float));
+    shouldInteractWithHumans = true;
+    readyToChangeAnimation = true;
+  }
+}
+
+/**
+ * Makes the Being shocked by setting the proper variables
+ */
+void getShocked() {
+  shouldInteractWithHumans = false;
+  shockTimer = millis();
+  chargeCounter = 0;
+  memcpy(currentAnimation, aniShock, (5 * MAX_ANI + 1)*sizeof(float));
+  i2cState = 4;
+}
+
+/**
+ * Makes the Being climax by setting the proper variables
+ */
+void getClimaxed() {
+  memcpy(currentAnimation, aniClimax, (5 * MAX_ANI + 1)*sizeof(float));
+  chargeCounter = 0;
+  shouldInteractWithHumans = false;
+  i2cState = 3;
 }
 
 /**
