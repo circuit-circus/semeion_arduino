@@ -23,7 +23,7 @@
 /** LED
 
 */
-#define NUM_LEDS 25
+#define NUM_LEDS 58
 #define DATA_PIN 3
 #define MAX_ANI 2 //Maximum number of curves per animation
 CRGB leds [NUM_LEDS];
@@ -61,7 +61,7 @@ bool shouldInteractWithHumans = false;
 const uint8_t minProximity = 5;
 const uint8_t maxProximity = 12;
 const uint8_t closeProximity = 5;
-const uint8_t touchProximity = 19;
+const uint8_t touchProximity = 8;
 const uint8_t shockAcc = 3;
 volatile unsigned int chargeCounter = 0;
 const unsigned int chargeCounterThreshold = 1000;
@@ -181,7 +181,7 @@ void runTactSensor() {
     calculateProxAndAcc(calculateBaseline());
 
     // Serial.println(acceleration);
-    // Serial.println(proximity);
+    Serial.println(proximity);
   }
 }
 
