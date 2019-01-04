@@ -23,17 +23,21 @@
 CRGB leds[NUM_LEDS];
 
 // Potentiometer
-#define POT_PIN A0
+#define POT_PIN A3
+
+// Doppler sensors
+#define DOPPLER_PIN1 A0
+#define DOPPLER_PIN2 A2
 
 uint8_t currProximity = 0;
 uint8_t lastProximity = 0;
-int proximityReadingInterval = 1000;
+int proximityReadingInterval = 100;
 unsigned long lastProximityReading = 0;
 
 int acceleration;
 
-uint8_t deactiveThreshold = 5;
-uint8_t activeThreshold = 30;
+uint8_t deactiveThreshold = 15;
+uint8_t activeThreshold = 50;
 uint8_t accelerationThreshold = 30;
 
 // Timer for first contact
@@ -177,6 +181,10 @@ void setup() {
 
   // Setup pot
   pinMode(POT_PIN, INPUT);
+
+  // Setup dopplers
+  pinMode(DOPPLER_PIN1, INPUT);
+  pinMode(DOPPLER_PIN2, INPUT);
 }
 
 void loop() {
@@ -191,7 +199,8 @@ void readSensor() {
   if(millis() - lastProximityReading > proximityReadingInterval) {
     lastProximityReading = millis();
     lastProximity = currProximity;
-    currProximity = map(analogRead(POT_PIN), 0, 1023, 0, 100);
+    
+    currProximity = map(analogRead(DOPPLER_PIN1), 500, 1023, 0, 100);
     acceleration = abs(currProximity - lastProximity);
     Serial.println(currProximity);
   }
@@ -244,7 +253,8 @@ void setVariablesFromStates() {
     maxBrightness = maxIdleBri;
     t = 0;
     memcpy(currentAnimation, aniIdle, 5 * MAX_ANI *sizeof(float));
-    Serial.println("My state is IDLE");
+    //Serial.println("My state is IDLE");
+    Serial.println("IDLE");
   }
   else if(activityState == 0) {
     if(pleasureState == 0 && minColor != minDeUnCol) {
@@ -256,7 +266,8 @@ void setVariablesFromStates() {
       maxBrightness = maxDeUnBri;
       t = 0;
       memcpy(currentAnimation, aniDeUn, 5 * MAX_ANI *sizeof(float));
-      Serial.println("My state is DEACTIVE UNPLEASANT");
+      //Serial.println("My state is DEACTIVE UNPLEASANT");
+      Serial.println("DU");
     }
     else if(pleasureState == 1 && minColor != minDePlCol) {
       // currentPalette = DePlPalette_p;
@@ -267,7 +278,8 @@ void setVariablesFromStates() {
       maxBrightness = maxDePlBri;
       t = 0;
       memcpy(currentAnimation, aniDePl, 5 * MAX_ANI *sizeof(float));
-      Serial.println("My state is DEACTIVE PLEASANT");
+      //Serial.println("My state is DEACTIVE PLEASANT");
+      Serial.println("DP");
     }
   }
   else if(activityState == 1) {
@@ -280,7 +292,8 @@ void setVariablesFromStates() {
       maxBrightness = maxAcUnBri;
       t = 0;
       memcpy(currentAnimation, aniAcUn, 5 * MAX_ANI *sizeof(float));
-      Serial.println("My state is ACTIVE UNPLEASANT");
+      //Serial.println("My state is ACTIVE UNPLEASANT");
+      Serial.println("AU");
     }
     else if(pleasureState == 1 && minColor != minAcPlCol) {
       // currentPalette = AcPlPalette_p;
@@ -291,7 +304,8 @@ void setVariablesFromStates() {
       maxBrightness = maxAcPlBri;
       t = 0;
       memcpy(currentAnimation, aniAcPl, 5 * MAX_ANI *sizeof(float));
-      Serial.println("My state is ACTIVE PLEASANT");
+      //Serial.println("My state is ACTIVE PLEASANT");
+      Serial.println("AP");
     }
   }
 }
