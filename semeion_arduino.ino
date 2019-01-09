@@ -34,6 +34,10 @@ uint8_t lastProximity = 0;
 int proximityReadingInterval = 100;
 unsigned long lastProximityReading = 0;
 
+// These will be used to determine lower and higher bounds
+int lowestReading = 1024;
+int highestReading = 0;
+
 int acceleration;
 
 uint8_t deactiveThreshold = 15;
@@ -199,9 +203,38 @@ void readSensor() {
   if(millis() - lastProximityReading > proximityReadingInterval) {
     lastProximityReading = millis();
     lastProximity = currProximity;
+
+    int dopplerVal1 = analogRead(DOPPLER_PIN1);
+    int dopplerVal2 = analogRead(DOPPLER_PIN2);
+
+//    Serial.print("Doppler 1: ");
+//    Serial.print(dopplerVal1);
+//    Serial.print(". Dopper 2: ");
+//    Serial.println(dopplerVal2);
+
+    // Test if we have new lower/upper bounds
+    if(dopplerVal1 < lowestReading) {
+      lowestReading = dopplerVal1;
+    }
+    if(dopplerVal2 < lowestReading) {
+      lowestReading = dopplerVal2;
+    }
+    if(dopplerVal1 > highestReading) {
+      highestReading = dopplerVal1;
+    }
+    if(dopplerVal2 > highestReading) {
+      highestReading = dopplerVal2;
+    }
+
+//    Serial.print("Lowest: ");
+//    Serial.print(lowestReading);
+//    Serial.print(". Highest: ");
+//    Serial.println(highestReading);
     
-    currProximity = map(analogRead(DOPPLER_PIN1), 500, 1023, 0, 100);
-    acceleration = abs(currProximity - lastProximity);
+    int currentValue = dopplerVal1 + dopplerVal2;
+    
+    currProximity = map(currentValue, lowestReading*2, highestReading*2, 0, 100);
+    //acceleration = abs(currProximity - lastProximity);
     Serial.println(currProximity);
   }
 }
