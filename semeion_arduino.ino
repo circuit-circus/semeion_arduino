@@ -35,8 +35,6 @@ const bool    kMatrixSerpentineLayout = true;
 #define BRIGHTNESS 255
 
 #define NUM_LEDS (kMatrixWidth * kMatrixHeight)
-//CRGB leds_plus_safety_pixel[ NUM_LEDS + 1];
-//CRGB* const leds( leds_plus_safety_pixel + 1);
 CRGB leds[NUM_LEDS];
 
 uint16_t XY( uint8_t x, uint8_t y) {
@@ -64,13 +62,6 @@ uint16_t XY( uint8_t x, uint8_t y) {
 #define DOPPLER_PIN1 A0
 #define DOPPLER_PIN2 A1
 
-//int lightVal;
-//int lastLightVal;
-//float lightMultiplier = 0.0;
-//int hueVal = 80;
-//int hueMin = 80;
-//int hueMax = 130;
-
 int currentActivity;
 const uint8_t deactiveThreshold = 80;
 long lastInteractionTime;
@@ -84,7 +75,7 @@ const uint8_t reactionThreshold = 180;
 //Learning values
 int aniSpeed;
 int chaos;
-int baseHue;
+int baseHue = 150;
 
 int baseSat = 255;
 
@@ -123,19 +114,7 @@ int readIndex;
 int lowestReading = 520;
 int highestReading = 100;
 
-boolean hueUp = true;
-uint16_t speed = 50;
-uint16_t scale = 330;
-
 boolean goingDown = true;
-float i_speed = 0.8;
-
-//uint8_t noise[NUM_LEDS];
-
-// The 32bit version of our coordinates
-//static uint16_t x;
-//static uint16_t y;
-//static uint16_t z;
 
 int iterator = 1;
 #define MAX_ANI 1;
@@ -164,20 +143,22 @@ void loop() {
 
   //    Serial.print("H ");
   //    Serial.print(confettiHeight);
-    Serial.print(", A ");
-    Serial.print(currentActivity);
-    Serial.print(", H ");
-    Serial.print(reactionHeight);
-    Serial.print(", BU ");
-    Serial.print(buildUp);
-    Serial.print(", C ");
-    Serial.println(isClimaxing);
+//    Serial.print(", A ");
+//    Serial.print(currentActivity);
+//    Serial.print(", H ");
+//    Serial.print(reactionHeight);
+//    Serial.print(", BU ");
+//    Serial.println(buildUp);
+//    Serial.print(", HR ");
+//    Serial.print(highestReading);
+//    Serial.print(", C ");
+//    Serial.println(isClimaxing);
+    
   //    Serial.print(", AL ");
   //    Serial.println(numActiveConfettiLeds);
 
   determineStates();
   setAnimation();
-  //setValueFromStates();
   FastLED.show();
 
   timer.run();
@@ -203,7 +184,7 @@ void determineStates() {
       isReacting = true;
       buildUp++;
       buildUp = constrain(buildUp, 0, 255);
-      reactionHeight = map(currentActivity, reactionThreshold, highestReading, 0, kMatrixHeight);
+      reactionHeight = map(currentActivity, reactionThreshold, 255, 0, kMatrixHeight);
     }
 
     if (buildUp > climaxThreshold) {
@@ -221,15 +202,12 @@ void determineStates() {
     climaxT = 0;
   }
 
-  //  Serial.print("Is reacting: ");
-  //  Serial.println(isReacting);
-
 }
 
 void setAnimation() {
 
   if (!isClimaxing) {
-    buildUpAnimation();
+    //buildUpAnimation();
     confettiAnimation();
     if (isReacting) {
       reactionAnimation();
@@ -238,73 +216,6 @@ void setAnimation() {
     climaxAnimation();
   }
 }
-
-//void setVariablesFromStates() {
-//  if (activityState == -1 && minColor != minIdleCol) {
-//    // currentPalette = MainPalette_p;
-//    minColor = minIdleCol;
-//    maxColor = maxIdleCol;
-//    speed = lerpFloat(minSpeed, maxSpeed, idleSpeed);
-//    minBrightness = minIdleBri;
-//    maxBrightness = maxIdleBri;
-//    //t = 0;
-//    //memcpy(currentAnimation, aniIdle, 5 * MAX_ANI * sizeof(float));
-//    //Serial.println("My state is IDLE");
-//    //Serial.println("IDLE");
-//  }
-//  else if (activityState == 0) {
-//    if (pleasureState == 0 && minColor != minDeUnCol) {
-//      // currentPalette = DeUnPalette_p;
-//      minColor = minDeUnCol;
-//      maxColor = maxDeUnCol;
-//      speed = lerpFloat(minSpeed, maxSpeed, deUnSpeed);
-//      minBrightness = minDeUnBri;
-//      maxBrightness = maxDeUnBri;
-//      //t = 0;
-//      //memcpy(currentAnimation, aniDeUn, 5 * MAX_ANI * sizeof(float));
-//      //Serial.println("My state is DEACTIVE UNPLEASANT");
-//      //Serial.println("DU");
-//    }
-//    else if (pleasureState == 1 && minColor != minDePlCol) {
-//      // currentPalette = DePlPalette_p;
-//      minColor = minDePlCol;
-//      maxColor = maxDePlCol;
-//      speed = lerpFloat(minSpeed, maxSpeed, dePlSpeed);
-//      minBrightness = minDePlBri;
-//      maxBrightness = maxDePlBri;
-//      //t = 0;
-//      //memcpy(currentAnimation, aniDePl, 5 * MAX_ANI * sizeof(float));
-//      //Serial.println("My state is DEACTIVE PLEASANT");
-//      //Serial.println("DP");
-//    }
-//  }
-//  else if (activityState == 1) {
-//    if (pleasureState == 0 && minColor != minAcUnCol) {
-//      // currentPalette = AcUnPalette_p;
-//      minColor = minAcUnCol;
-//      maxColor = maxAcUnCol;
-//      speed = lerpFloat(minSpeed, maxSpeed, acUnSpeed);
-//      minBrightness = minAcUnBri;
-//      maxBrightness = maxAcUnBri;
-//      //t = 0;
-//      //memcpy(currentAnimation, aniAcUn, 5 * MAX_ANI * sizeof(float));
-//      //Serial.println("My state is ACTIVE UNPLEASANT");
-//      //Serial.println("AU");
-//    }
-//    else if (pleasureState == 1 && minColor != minAcPlCol) {
-//      // currentPalette = AcPlPalette_p;
-//      minColor = minAcPlCol;
-//      maxColor = maxAcPlCol;
-//      speed = lerpFloat(minSpeed, maxSpeed, acPlSpeed);
-//      minBrightness = minAcPlBri;
-//      maxBrightness = maxAcPlBri;
-//      //t = 0;
-//      //memcpy(currentAnimation, aniAcPl, 5 * MAX_ANI * sizeof(float));
-//      //Serial.println("My state is ACTIVE PLEASANT");
-//      //Serial.println("AP");
-//    }
-//  }
-//}
 
 void readCalculate() {
 
@@ -334,112 +245,32 @@ void readCalculate() {
 
 }
 
-//void readCalculate() {
-//
-//  dopplerVal1 = analogRead(DOPPLER_PIN1);
-//
-//  if (dopplerVal1 < lowestReading) {
-//    lowestReading = dopplerVal1;
-//  }
-//
-//  if (dopplerVal1 > highestReading) {
-//    highestReading = dopplerVal1;
-//  }
-//
-//  dopplerVal1 = map(dopplerVal1, lowestReading, highestReading, 0, 255);
-//
-//
-//  // Calculate last average
-//  lastSensorTotal = lastSensorTotal - lastSensorReadings[readIndex];
-//  lastSensorReadings[readIndex] = dopplerVal1;
-//  lastSensorTotal = lastSensorTotal + lastSensorReadings[readIndex];
-//  lastSensorAverage = lastSensorTotal / numReadings;
-//  readIndex += 1;
-//  if (readIndex >= numReadings) {
-//    readIndex = 0;
-//  }
-//
-//  lightVal = lastSensorAverage;
-//
-//  // Cycle the hue (right now we're at full color spectrum)
-//  if (hueUp && hueVal > hueMax) {
-//    hueUp = false;
-//  } else if (!hueUp && hueVal < hueMin) {
-//    hueUp = true;
-//  }
-//
-//  // There is movement and have been for a little while
-//  if (lastSensorAverage > 200 && dopplerVal1 > 200) {
-//    lightMultiplier += 0000.1;
-//
-//    // If we're still not a maximum brightness intensity, let's add some more
-//    if (lightVal + lightMultiplier < 250) {
-//
-//      lightVal += lightMultiplier;
-//
-//      // If we're maxing out on intensity, let's change the hue instead
-//    } else {
-//
-//      lightVal = 255;
-//
-//      if (hueUp) {
-//        hueVal += 1;
-//      } else {
-//        hueVal -= 1;
-//      }
-//
-//    }
-//
-//    // There's movement and there wasn't before
-//  } else if (dopplerVal1 > 150 && lastSensorAverage < 150) {
-//    lightMultiplier += 00.1;
-//    if (lightVal + lightMultiplier < 250) {
-//      lightVal += lightMultiplier;
-//    }
-//
-//    // No intense movement for a while
-//  } else {
-//    if (lightMultiplier > 1) lightMultiplier -= 0.1;
-//
-//    if (hueUp) {
-//      hueVal += 1;
-//    } else {
-//      hueVal -= 1;
-//    }
-//  }
-//
-//  lightVal = constrain(lightVal, 0, 255);
-//  hueVal = constrain(hueVal, 0, 255);
-//
-//  //Serial.println(hueVal);
-//}
-
 int pick(int x_, int y_) {
   int x = x_;
   int y = y_;
   int p = XY(x, y);
   int checkedPick;
   boolean isTaken = false;
-  //
-  //  for (int i = 0; i < numActiveConfettiLeds; i++) {
-  //    if (activeConfettiLeds[i] == p) {
-  //      isTaken = true;
-  //    }
-  //    if (isTaken) {
-  //      i = 0;
-  //      isTaken = false;
-  //
-  //      y++;
-  //      if (y > confettiHeight - 1) {
-  //        y = 0;
-  //        x++;
-  //        if (x > kMatrixWidth - 1) {
-  //          x = 0;
-  //        }
-  //      }
-  //      p = XY(x, y);
-  //    }
-  //  }
+  
+    for (int i = 0; i < numActiveConfettiLeds; i++) {
+      if (activeConfettiLeds[i] == p) {
+        isTaken = true;
+      }
+      if (isTaken) {
+        i = 0;
+        isTaken = false;
+  
+        y++;
+        if (y > confettiHeight - 1) {
+          y = 0;
+          x++;
+          if (x > kMatrixWidth - 1) {
+            x = 0;
+          }
+        }
+        p = XY(x, y);
+      }
+    }
   checkedPick = p;
 
   return checkedPick;
@@ -460,7 +291,7 @@ void buildUpAnimation() {
 void confettiAnimation() {
   float curve[] = {0, 1.5, 1.07, 0, 100}; // ease-in-out
 
-  numActiveConfettiLeds = constrain(int(confettiHeight * kMatrixWidth / 0.5), 0, maxActiveConfettiLeds);
+  numActiveConfettiLeds = constrain(int(confettiHeight * kMatrixWidth / 0.7), 0, maxActiveConfettiLeds);
 
   for (int i = 0; i < numActiveConfettiLeds; i++) {
     if (activeConfettiLedsT[i] >= 255) {
@@ -472,6 +303,8 @@ void confettiAnimation() {
   for (int i = 0; i < maxActiveConfettiLeds; i++) {
 
     float t = (float) activeConfettiLedsT[i] / 255.0;
+
+    if (t < 0.99){
 
     float y = 0;
     int duration;
@@ -486,8 +319,9 @@ void confettiAnimation() {
       t += (1.0 / duration);
     }
 
-    activeConfettiLedsT[i] = (uint8_t)round(t * 255.0);
+    activeConfettiLedsT[i] = constrain((uint8_t)round(t * 255.0),0,255);
     leds[activeConfettiLeds[i]] = CHSV(baseHue + i - int(maxActiveConfettiLeds / 2) , 255,  y * 255);
+    }
   }
 }
 
@@ -507,6 +341,8 @@ void reactionAnimation() {
 
     float t = (float) activeReactionLedsT[i] / 255.0;
 
+    if(t < 0.99){
+
     float y = 0;
     int duration;
 
@@ -520,12 +356,14 @@ void reactionAnimation() {
       t += (1.0 / duration);
     }
 
-    activeReactionLedsT[i] = (uint8_t) round(t * 255.0);
+    activeReactionLedsT[i] = constrain((uint8_t)round(t * 255.0),0,255);
     leds[activeReactionLeds[i]] = CHSV(baseHue + i - int(maxActiveReactionLeds / 2) , 100,  y * 255);
+    }
   }
 }
+
 void climaxAnimation() {
-  float curve[] = {1, 1, 1, 0, 70};
+  float curve[] = {1, 1, 1, 0, 100};
 
   float t = (float) climaxT / 255.0;
 
@@ -550,3 +388,7 @@ void climaxAnimation() {
     }
   }
 }
+
+void animate(){}
+
+void animateTime(){}
