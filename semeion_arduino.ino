@@ -1,3 +1,4 @@
+
 /*
    ––––––––––––––––
   |C I R C         |
@@ -12,157 +13,103 @@
   A CIRCUIT CIRCUS PROJECT
 */
 
+
 // INCLUDES
 #include <FastLED.h>
-
+#include <SimpleTimer.h>
 
 // LED
-#define NUM_LEDS 60
-#define MIN_LED 0
-#define LED_PIN 3
+
+// Params for width and height
+const uint8_t kMatrixWidth = 2;
+const uint8_t kMatrixHeight = 58;
+
+// Param for different pixel layouts
+const bool    kMatrixSerpentineLayout = true;
+
+#define LED_PIN  2
+
+#define COLOR_ORDER GRB
+#define CHIPSET     WS2812B
+
+#define BRIGHTNESS 255
+
+#define NUM_LEDS (kMatrixWidth * kMatrixHeight)
+//CRGB leds_plus_safety_pixel[ NUM_LEDS + 1];
+//CRGB* const leds( leds_plus_safety_pixel + 1);
 CRGB leds[NUM_LEDS];
+
+uint16_t XY( uint8_t x, uint8_t y) {
+  uint16_t i;
+
+  if ( kMatrixSerpentineLayout == false) {
+    i = (y * kMatrixWidth) + x;
+  }
+
+  if ( kMatrixSerpentineLayout == true) {
+    if ( x & 0x01) {
+      // Odd rows run backwards
+      uint8_t reverseY = (kMatrixHeight - 1) - y;
+      i = (x * kMatrixHeight) + reverseY;
+    } else {
+      // Even rows run forwards
+      i = (x * kMatrixHeight) + y;
+    }
+  }
+
+  return i;
+}
 
 // Doppler sensors
 #define DOPPLER_PIN1 A0
-#define DOPPLER_PIN2 A2
+#define DOPPLER_PIN2 A1
 
-uint8_t currProximity = 0;
-uint8_t lastProximity = 0;
-int proximityReadingInterval = 100;
-unsigned long lastProximityReading = 0;
+//int lightVal;
+//int lastLightVal;
+//float lightMultiplier = 0.0;
+//int hueVal = 80;
+//int hueMin = 80;
+//int hueMax = 130;
 
-// These will be used to determine lower and higher bounds
-int lowestReading = 520;
-int highestReading = 1000;
+int currentActivity;
+const uint8_t deactiveThreshold = 80;
+long lastInteractionTime;
+const int timeThreshold = 5000;
+boolean isActive = false;
+boolean isClimaxing = false;
+const uint8_t climaxThreshold = 240;
+uint8_t buildUp = 0;
+const uint8_t reactionThreshold = 180;
 
-int acceleration;
+//Learning values
+int aniSpeed;
+int chaos;
+int baseHue;
 
-uint8_t deactiveThreshold = 15;
-uint8_t activeThreshold = 50;
-uint8_t accelerationThreshold = 30;
+int baseSat = 255;
 
-// Timer for first contact
-int firstContactInterval = 3000;
-unsigned long firstContactTimer;
+//Animation values
+uint8_t confettiHeight = 25;
+const uint8_t maxActiveConfettiLeds = 100;
+uint8_t numActiveConfettiLeds = 71;
+uint8_t activeConfettiLeds[maxActiveConfettiLeds];
+uint8_t activeConfettiLedsT[maxActiveConfettiLeds];
 
-// Timer for feeling unpleasant when active
-int feltUnpleasantInterval = 5000;
-unsigned long feltUnpleasantTimer;
+boolean isReacting = false;
 
-// -1 = IDLE, 0 = DEACTIVE, 1 = ACTIVE
-int activityState = -1;
-// 0 = UNPLEASANT, 1 = PLEASANT
-int pleasureState = 0;
+uint8_t reactionHeight = 0;
+const uint8_t maxActiveReactionLeds = 100;
+uint8_t numActiveReactionLeds = 0;
+uint8_t activeReactionLeds[maxActiveReactionLeds];
+uint8_t activeReactionLedsT[maxActiveReactionLeds];
 
-/**
-   NOISE
-*/
-// 1D Noise is adapted from FastLEDs Noise example, which uses 2D
-// The 32bit version of our coordinates
-static uint16_t x;
-static uint16_t y;
+uint8_t climaxT;
+long lastClimaxTime;
+int climaxLength = 1000;
 
-// We're using the x dimension to map to the pixel.  We'll
-// use the y-axis for "time".
-// Speed determines how fast time moves forward.
-// Try 1 for a very slow moving effect, or 60 for something that ends up looking like water.
-//
-const float minSpeed = 1.0f;
-const float maxSpeed = 5.0f;
-float speed = minSpeed;
-
-// Scale determines how far apart the pixels in our noise matrix are.  Try
-// changing these values around to see how it affects the motion of the display.  The
-// higher the value of scale, the more "zoomed out" the noise iwll be.  A value
-// of 1 will be so zoomed in, you'll mostly see solid colors.
-//
-// uint16_t scale = 1; // mostly just solid colors
-uint16_t scale = 311; // a nice start
-// uint16_t scale = 4011; // very zoomed out and shimmery
-
-// This is where we keep our noise values
-uint8_t noise[NUM_LEDS];
-
-/**
-   LED VALUES
-*/
-CRGBPalette16 currentPalette;
-TBlendType currentBlending;
-uint8_t minBrightness;
-uint8_t maxBrightness;
-uint8_t minColor;
-uint8_t maxColor;
-
-/**
-   ANIMATION
-*/
-#define MAX_ANI 2 //Maximum number of curves per animation
-bool readyToChangeAnimation;
-float t;
-float duration;
-int iterator = 1;
-float currentAnimation[10];
-uint8_t maxLed = NUM_LEDS;
-uint8_t fadeScales[NUM_LEDS];
-const uint8_t fadeAmount = 2;
-
-/**
-   STATES
-*/
-DEFINE_GRADIENT_PALETTE(MainPalette_p) {
-  0, 250, 19, 31,
-  255, 0, 178, 252
-};
-
-
-float idleSpeed = 0.1f;
-
-uint8_t minIdleBri = 10;
-uint8_t maxIdleBri = 20;
-
-uint8_t minIdleCol = 40;
-uint8_t maxIdleCol = 60;
-float aniIdle[] = {0.1, 0.5, 0.5, 0.1, 600.0, -99, 0, 0, 0, 0};
-
-float deUnSpeed = 0.2f;
-
-uint8_t minDeUnBri = 40;
-uint8_t maxDeUnBri = 70;
-
-uint8_t minDeUnCol = 60;
-uint8_t maxDeUnCol = 80;
-float aniDeUn[] = {0.66, 1.15, 1.035, 0.665, 300.0, -99, 0, 0, 0, 0};
-
-float dePlSpeed = 0.3f;
-
-uint8_t minDePlBri = 40;
-uint8_t maxDePlBri = 70;
-
-uint8_t minDePlCol = 0;
-uint8_t maxDePlCol = 20;
-float aniDePl[] = {0.3, 1.1, 1.1, 0.3, 400.0, -99, 0, 0, 0, 0};
-
-float acUnSpeed = 0.8f;
-
-uint8_t minAcUnBri = 65;
-uint8_t maxAcUnBri = 100;
-
-uint8_t minAcUnCol = 80;
-uint8_t maxAcUnCol = 100;
-float aniAcUn[] = {0.585, 1.255, 0.945, 0.6, 150.0, -99, 0, 0, 0, 0};
-
-float acPlSpeed = 0.7f;
-
-uint8_t minAcPlBri = 80;
-uint8_t maxAcPlBri = 100;
-
-uint8_t minAcPlCol = 20;
-uint8_t maxAcPlCol = 40;
-float aniAcPl[] = {0.5, 1.0, 1.0, 0.5, 400.0, -99, 0, 0, 0, 0};
-
-
-int lightVal;
-int lastLightVal;
+//Curves
+//float ease[] = {0, 1.5, 1.07, 0, 50}; // ease-in-out
+//float hard[] = {1, 1, 1, 0, 20}; // Hard flash ease out
 
 int valToUse;
 int dopplerVal1; // Mellem 500-1024, skal smoothes
@@ -172,35 +119,194 @@ int lastSensorTotal;
 int lastSensorReadings[numReadings];
 int readIndex;
 
+// These will be used to determine lower and higher bounds
+int lowestReading = 520;
+int highestReading = 100;
 
+boolean hueUp = true;
+uint16_t speed = 50;
+uint16_t scale = 330;
 
+boolean goingDown = true;
+float i_speed = 0.8;
 
+//uint8_t noise[NUM_LEDS];
+
+// The 32bit version of our coordinates
+//static uint16_t x;
+//static uint16_t y;
+//static uint16_t z;
+
+int iterator = 1;
+#define MAX_ANI 1;
+
+SimpleTimer timer;
 
 void setup() {
-
   Serial.begin(9600);
 
-  // Setup FastLED
-  FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, NUM_LEDS);
-  for (uint8_t i = 0; i < NUM_LEDS; i++) {
-    leds[i].setRGB(0, 0, 0);
-    fadeScales[i] = 255;
-    FastLED.show();
-  }
+  FastLED.addLeds<CHIPSET, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalSMD5050);
+  FastLED.setBrightness( BRIGHTNESS );
 
-  currentPalette = MainPalette_p;
-  minBrightness = minIdleBri;
-  maxBrightness = maxIdleBri;
-  minColor = minIdleCol;
-  maxColor = maxIdleCol;
-  memcpy(currentAnimation, aniIdle, 5 * MAX_ANI * sizeof(float));
-
-  // Setup dopplers
   pinMode(DOPPLER_PIN1, INPUT);
-  pinMode(DOPPLER_PIN2, INPUT);
+
+  timer.setInterval(50, readCalculate);
+
+  fill_solid(leds, kMatrixWidth * kMatrixHeight, CRGB::Black);
+
+  for (int i = 0; i < maxActiveConfettiLeds; i++) {
+    activeConfettiLeds[i] = random8(kMatrixWidth * kMatrixHeight - 1);
+    activeConfettiLedsT[i] = random8(1, 255);
+  }
 }
 
 void loop() {
+
+  //    Serial.print("H ");
+  //    Serial.print(confettiHeight);
+    Serial.print(", A ");
+    Serial.print(currentActivity);
+    Serial.print(", H ");
+    Serial.print(reactionHeight);
+    Serial.print(", BU ");
+    Serial.print(buildUp);
+    Serial.print(", C ");
+    Serial.println(isClimaxing);
+  //    Serial.print(", AL ");
+  //    Serial.println(numActiveConfettiLeds);
+
+  determineStates();
+  setAnimation();
+  //setValueFromStates();
+  FastLED.show();
+
+  timer.run();
+}
+
+void determineStates() {
+
+  if (!isClimaxing) {
+
+    if (currentActivity > deactiveThreshold) {
+      //Become active
+      isActive = true;
+      confettiHeight = kMatrixHeight;
+      lastInteractionTime = millis();
+    } else if (currentActivity < deactiveThreshold && millis() - lastInteractionTime  > timeThreshold) {
+      //Become idle
+      isActive = false;
+      buildUp = 0;
+      confettiHeight = 25;
+    }
+
+    if (isActive && currentActivity > reactionThreshold) {
+      isReacting = true;
+      buildUp++;
+      buildUp = constrain(buildUp, 0, 255);
+      reactionHeight = map(currentActivity, reactionThreshold, highestReading, 0, kMatrixHeight);
+    }
+
+    if (buildUp > climaxThreshold) {
+      //Climax
+      isClimaxing = true;
+      lastClimaxTime = millis();
+    }
+    if (currentActivity < reactionThreshold) {
+      isReacting = false;
+      reactionHeight = 0;
+    }
+  } else if (millis() - lastClimaxTime > climaxLength && isClimaxing && climaxT >= 250) {
+    isClimaxing = false;
+    buildUp = 0;
+    climaxT = 0;
+  }
+
+  //  Serial.print("Is reacting: ");
+  //  Serial.println(isReacting);
+
+}
+
+void setAnimation() {
+
+  if (!isClimaxing) {
+    buildUpAnimation();
+    confettiAnimation();
+    if (isReacting) {
+      reactionAnimation();
+    }
+  } else {
+    climaxAnimation();
+  }
+}
+
+//void setVariablesFromStates() {
+//  if (activityState == -1 && minColor != minIdleCol) {
+//    // currentPalette = MainPalette_p;
+//    minColor = minIdleCol;
+//    maxColor = maxIdleCol;
+//    speed = lerpFloat(minSpeed, maxSpeed, idleSpeed);
+//    minBrightness = minIdleBri;
+//    maxBrightness = maxIdleBri;
+//    //t = 0;
+//    //memcpy(currentAnimation, aniIdle, 5 * MAX_ANI * sizeof(float));
+//    //Serial.println("My state is IDLE");
+//    //Serial.println("IDLE");
+//  }
+//  else if (activityState == 0) {
+//    if (pleasureState == 0 && minColor != minDeUnCol) {
+//      // currentPalette = DeUnPalette_p;
+//      minColor = minDeUnCol;
+//      maxColor = maxDeUnCol;
+//      speed = lerpFloat(minSpeed, maxSpeed, deUnSpeed);
+//      minBrightness = minDeUnBri;
+//      maxBrightness = maxDeUnBri;
+//      //t = 0;
+//      //memcpy(currentAnimation, aniDeUn, 5 * MAX_ANI * sizeof(float));
+//      //Serial.println("My state is DEACTIVE UNPLEASANT");
+//      //Serial.println("DU");
+//    }
+//    else if (pleasureState == 1 && minColor != minDePlCol) {
+//      // currentPalette = DePlPalette_p;
+//      minColor = minDePlCol;
+//      maxColor = maxDePlCol;
+//      speed = lerpFloat(minSpeed, maxSpeed, dePlSpeed);
+//      minBrightness = minDePlBri;
+//      maxBrightness = maxDePlBri;
+//      //t = 0;
+//      //memcpy(currentAnimation, aniDePl, 5 * MAX_ANI * sizeof(float));
+//      //Serial.println("My state is DEACTIVE PLEASANT");
+//      //Serial.println("DP");
+//    }
+//  }
+//  else if (activityState == 1) {
+//    if (pleasureState == 0 && minColor != minAcUnCol) {
+//      // currentPalette = AcUnPalette_p;
+//      minColor = minAcUnCol;
+//      maxColor = maxAcUnCol;
+//      speed = lerpFloat(minSpeed, maxSpeed, acUnSpeed);
+//      minBrightness = minAcUnBri;
+//      maxBrightness = maxAcUnBri;
+//      //t = 0;
+//      //memcpy(currentAnimation, aniAcUn, 5 * MAX_ANI * sizeof(float));
+//      //Serial.println("My state is ACTIVE UNPLEASANT");
+//      //Serial.println("AU");
+//    }
+//    else if (pleasureState == 1 && minColor != minAcPlCol) {
+//      // currentPalette = AcPlPalette_p;
+//      minColor = minAcPlCol;
+//      maxColor = maxAcPlCol;
+//      speed = lerpFloat(minSpeed, maxSpeed, acPlSpeed);
+//      minBrightness = minAcPlBri;
+//      maxBrightness = maxAcPlBri;
+//      //t = 0;
+//      //memcpy(currentAnimation, aniAcPl, 5 * MAX_ANI * sizeof(float));
+//      //Serial.println("My state is ACTIVE PLEASANT");
+//      //Serial.println("AP");
+//    }
+//  }
+//}
+
+void readCalculate() {
 
   dopplerVal1 = analogRead(DOPPLER_PIN1);
 
@@ -212,6 +318,8 @@ void loop() {
     highestReading = dopplerVal1;
   }
 
+  dopplerVal1 = map(dopplerVal1, lowestReading, highestReading, 0, 255);
+
   // Calculate last average
   lastSensorTotal = lastSensorTotal - lastSensorReadings[readIndex];
   lastSensorReadings[readIndex] = dopplerVal1;
@@ -222,295 +330,223 @@ void loop() {
     readIndex = 0;
   }
 
-  int lightVal = map(lastSensorAverage, lowestReading, highestReading, 10, 255);
+  currentActivity = lastSensorAverage;
 
-  Serial.print("lastSensorAverage: ");
-  Serial.print(lastSensorAverage);
-  Serial.print("lightVal: ");
-  Serial.print(lightVal);
-  Serial.print(", lowestReading: ");
-  Serial.print(lowestReading);
-  Serial.print(", highestReading: ");
-  Serial.print(highestReading);
-  Serial.println("");
-
-  //readSensor();
-  //determineStates();
-  //setVariablesFromStates();
-  //fillNoise8();
-  //showLeds();
 }
 
-void readSensor() {
-  if (millis() - lastProximityReading > proximityReadingInterval) {
-    lastProximityReading = millis();
-    lastProximity = currProximity;
-
-    int dopplerVal1 = analogRead(DOPPLER_PIN1);
-    int dopplerVal2 = analogRead(DOPPLER_PIN2);
-
-    //    Serial.print("Doppler 1: ");
-    //    Serial.print(dopplerVal1);
-    //    Serial.print(". Dopper 2: ");
-    //    Serial.println(dopplerVal2);
-
-    // Test if we have new lower/upper bounds
-    if (dopplerVal1 < lowestReading) {
-      lowestReading = dopplerVal1;
-    }
-//    if (dopplerVal2 < lowestReading) {
-//      lowestReading = dopplerVal2;
-//    }
-    if (dopplerVal1 > highestReading) {
-      highestReading = dopplerVal1;
-    }
-//    if (dopplerVal2 > highestReading) {
-//      highestReading = dopplerVal2;
-//    }
-
-
-
-//    Serial.print("Lowest: ");
-//    Serial.print(lowestReading * 2);
-//    Serial.print(". Highest: ");
-//    Serial.print(highestReading * 2);
+//void readCalculate() {
 //
-//    //int currentValue = dopplerVal1 + dopplerVal2;
-//    Serial.print("Doppler");
-//    Serial.println(dopplerVal1);
+//  dopplerVal1 = analogRead(DOPPLER_PIN1);
+//
+//  if (dopplerVal1 < lowestReading) {
+//    lowestReading = dopplerVal1;
+//  }
+//
+//  if (dopplerVal1 > highestReading) {
+//    highestReading = dopplerVal1;
+//  }
+//
+//  dopplerVal1 = map(dopplerVal1, lowestReading, highestReading, 0, 255);
+//
+//
+//  // Calculate last average
+//  lastSensorTotal = lastSensorTotal - lastSensorReadings[readIndex];
+//  lastSensorReadings[readIndex] = dopplerVal1;
+//  lastSensorTotal = lastSensorTotal + lastSensorReadings[readIndex];
+//  lastSensorAverage = lastSensorTotal / numReadings;
+//  readIndex += 1;
+//  if (readIndex >= numReadings) {
+//    readIndex = 0;
+//  }
+//
+//  lightVal = lastSensorAverage;
+//
+//  // Cycle the hue (right now we're at full color spectrum)
+//  if (hueUp && hueVal > hueMax) {
+//    hueUp = false;
+//  } else if (!hueUp && hueVal < hueMin) {
+//    hueUp = true;
+//  }
+//
+//  // There is movement and have been for a little while
+//  if (lastSensorAverage > 200 && dopplerVal1 > 200) {
+//    lightMultiplier += 0000.1;
+//
+//    // If we're still not a maximum brightness intensity, let's add some more
+//    if (lightVal + lightMultiplier < 250) {
+//
+//      lightVal += lightMultiplier;
+//
+//      // If we're maxing out on intensity, let's change the hue instead
+//    } else {
+//
+//      lightVal = 255;
+//
+//      if (hueUp) {
+//        hueVal += 1;
+//      } else {
+//        hueVal -= 1;
+//      }
+//
+//    }
+//
+//    // There's movement and there wasn't before
+//  } else if (dopplerVal1 > 150 && lastSensorAverage < 150) {
+//    lightMultiplier += 00.1;
+//    if (lightVal + lightMultiplier < 250) {
+//      lightVal += lightMultiplier;
+//    }
+//
+//    // No intense movement for a while
+//  } else {
+//    if (lightMultiplier > 1) lightMultiplier -= 0.1;
+//
+//    if (hueUp) {
+//      hueVal += 1;
+//    } else {
+//      hueVal -= 1;
+//    }
+//  }
+//
+//  lightVal = constrain(lightVal, 0, 255);
+//  hueVal = constrain(hueVal, 0, 255);
+//
+//  //Serial.println(hueVal);
+//}
 
-
-    Serial.print("1: "); Serial.print(450); Serial.print("  ");
-    Serial.print("2: "); Serial.print(1050); Serial.print("  ");
-    Serial.print("3: "); Serial.print(dopplerVal1); Serial.print("  ");
-    //Serial.print("4: "); Serial.print(dopplerVal2); Serial.print("  ");
-    Serial.print("5: "); Serial.print(lowestReading); Serial.print("  ");
-    Serial.print("6: "); Serial.print(highestReading); Serial.print("  ");
-    Serial.println("");
-
-
-    //    int multiplier = map(dopplerVal2, lowestReading, highestReading, 0, 10);
-    //    if(lightVal > 50 && lightVal < 255) {
-    //      lightVal += multiplier;
-    //      lightVal -= 5;
-    //      lightVal = constrain(lightVal, 50, 255);
-    //    }
-
-
-
-    //    currProximity = map(currentValue, lowestReading*2, highestReading*2, 0, 1);
-    //    currProximity -= 10;
-    //    currProximity = constrain(currProximity, 50, 255);
-    //acceleration = abs(currProximity - lastProximity);
-  }
-}
-
-void determineStates() {
-  // Determine states
-  if (currProximity < deactiveThreshold) {
-    // Idle
-    activityState = -1;
-    pleasureState = 0;
-  }
-  else if (currProximity < activeThreshold) {
-    // Deactive
-
-    // Did we come from IDLE?
-    if (activityState == -1) {
-      pleasureState = 0;
-      firstContactTimer = millis();
-    }
-
-    activityState = 0;
-
-    if ((millis() - firstContactTimer > firstContactInterval) && (pleasureState == 0)) {
-      pleasureState = 1;
-    }
-  }
-  else {
-    // Active
-    activityState = 1;
-
-    if (acceleration > accelerationThreshold) {
-      pleasureState = 0;
-
-      feltUnpleasantTimer = millis();
-    }
-    else if (millis() - feltUnpleasantTimer > feltUnpleasantInterval) {
-      pleasureState = 1;
-    }
-  }
-}
-
-void setVariablesFromStates() {
-  if (activityState == -1 && minColor != minIdleCol) {
-    // currentPalette = MainPalette_p;
-    minColor = minIdleCol;
-    maxColor = maxIdleCol;
-    speed = lerpFloat(minSpeed, maxSpeed, idleSpeed);
-    minBrightness = minIdleBri;
-    maxBrightness = maxIdleBri;
-    t = 0;
-    memcpy(currentAnimation, aniIdle, 5 * MAX_ANI * sizeof(float));
-    //Serial.println("My state is IDLE");
-    Serial.println("IDLE");
-  }
-  else if (activityState == 0) {
-    if (pleasureState == 0 && minColor != minDeUnCol) {
-      // currentPalette = DeUnPalette_p;
-      minColor = minDeUnCol;
-      maxColor = maxDeUnCol;
-      speed = lerpFloat(minSpeed, maxSpeed, deUnSpeed);
-      minBrightness = minDeUnBri;
-      maxBrightness = maxDeUnBri;
-      t = 0;
-      memcpy(currentAnimation, aniDeUn, 5 * MAX_ANI * sizeof(float));
-      //Serial.println("My state is DEACTIVE UNPLEASANT");
-      Serial.println("DU");
-    }
-    else if (pleasureState == 1 && minColor != minDePlCol) {
-      // currentPalette = DePlPalette_p;
-      minColor = minDePlCol;
-      maxColor = maxDePlCol;
-      speed = lerpFloat(minSpeed, maxSpeed, dePlSpeed);
-      minBrightness = minDePlBri;
-      maxBrightness = maxDePlBri;
-      t = 0;
-      memcpy(currentAnimation, aniDePl, 5 * MAX_ANI * sizeof(float));
-      //Serial.println("My state is DEACTIVE PLEASANT");
-      Serial.println("DP");
-    }
-  }
-  else if (activityState == 1) {
-    if (pleasureState == 0 && minColor != minAcUnCol) {
-      // currentPalette = AcUnPalette_p;
-      minColor = minAcUnCol;
-      maxColor = maxAcUnCol;
-      speed = lerpFloat(minSpeed, maxSpeed, acUnSpeed);
-      minBrightness = minAcUnBri;
-      maxBrightness = maxAcUnBri;
-      t = 0;
-      memcpy(currentAnimation, aniAcUn, 5 * MAX_ANI * sizeof(float));
-      //Serial.println("My state is ACTIVE UNPLEASANT");
-      Serial.println("AU");
-    }
-    else if (pleasureState == 1 && minColor != minAcPlCol) {
-      // currentPalette = AcPlPalette_p;
-      minColor = minAcPlCol;
-      maxColor = maxAcPlCol;
-      speed = lerpFloat(minSpeed, maxSpeed, acPlSpeed);
-      minBrightness = minAcPlBri;
-      maxBrightness = maxAcPlBri;
-      t = 0;
-      memcpy(currentAnimation, aniAcPl, 5 * MAX_ANI * sizeof(float));
-      //Serial.println("My state is ACTIVE PLEASANT");
-      Serial.println("AP");
-    }
-  }
-}
-
-void fillNoise8() {
-  for (int i = MIN_LED; i < NUM_LEDS; i++) {
-    int ioffset = scale * i;
-    noise[i] = inoise8(x + ioffset, y);
-  }
-  y += (uint16_t) speed;
-}
-
-void showLeds() {
-  //  // Figure out which LEDs should be turned on using a bezier curve
-  //  maxLed = (uint8_t) mapFloat(animate(currentAnimation), 0, 1.0f, 0, NUM_LEDS);
+int pick(int x_, int y_) {
+  int x = x_;
+  int y = y_;
+  int p = XY(x, y);
+  int checkedPick;
+  boolean isTaken = false;
   //
-  //  // A higher value makes the fading faster, but more jarring
-  //  for(int i = MIN_LED; i < NUM_LEDS; i++) {
-  //    // Fade out leds that should not be turned on
-  //    if(i > maxLed) {
-  //      if(fadeScales[i] > fadeAmount - 1) {
-  //        fadeScales[i] -= fadeAmount;
-  //      }
+  //  for (int i = 0; i < numActiveConfettiLeds; i++) {
+  //    if (activeConfettiLeds[i] == p) {
+  //      isTaken = true;
   //    }
-  //    // Fade in leds that should be turned on
-  //    else {
-  //      if(fadeScales[i] < 255 - fadeAmount + 1) {
-  //        fadeScales[i] += fadeAmount;
+  //    if (isTaken) {
+  //      i = 0;
+  //      isTaken = false;
+  //
+  //      y++;
+  //      if (y > confettiHeight - 1) {
+  //        y = 0;
+  //        x++;
+  //        if (x > kMatrixWidth - 1) {
+  //          x = 0;
+  //        }
   //      }
+  //      p = XY(x, y);
   //    }
-  //
-  //    // We use the value at the i coordinate in the noise
-  //    // array for our brightness, and the flipped value from NUM_LEDS-i
-  //    // for our pixel's index into the color palette.
-  //    uint8_t brightness = noise[NUM_LEDS - i];
-  //    uint8_t colorIndex = noise[i];
-  //    colorIndex = map(colorIndex, 0, 255, minColor, maxColor);
-  //    colorIndex = (uint8_t) colorIndex * 2.55;
-  //
-  //    CRGB color = ColorFromPalette(currentPalette, colorIndex, brightness);
-  //    leds[i] = color;
-  //    leds[i].nscale8(fadeScales[i]);
   //  }
+  checkedPick = p;
 
-  for (int i = MIN_LED; i < NUM_LEDS; i++) {
-    leds[i] = CRGB( (int)lightVal, (int)lightVal, (int)lightVal);
-  }
-
-  LEDS.show();
+  return checkedPick;
 }
 
-/**
-   Calculates the y value of a bezier curve, which is defined as a float array
-   @param p A float array containing the points of the bezier curve
-   @return The value of point t on the animation that is passed.
-*/
-float animate(float p[]) {
-  float y = 0;
+void rollUpAnimation() {}
+void rollDownAnimation() {}
 
-  y = (1 - t) * (1 - t) * (1 - t) * p[iterator + 0] + 3 * (1 - t) * (1 - t) * t * p[iterator + 1] + 3 * (1 - t) * t * t * p[iterator + 2] + t * t * t * p[iterator + 3]; //Cubic Bezier
+void buildUpAnimation() {
+  uint8_t brightness = round(255 * (buildUp / 255.0));
+  for (int i = 0; i < kMatrixWidth; i++) {
+    for (int j = 0; j < kMatrixHeight; j++) {
+      leds[XY(i, j)] = CHSV(200, 0, brightness);
+    }
+  }
+}
 
-  duration = p[iterator + 4];
+void confettiAnimation() {
+  float curve[] = {0, 1.5, 1.07, 0, 100}; // ease-in-out
 
-  t += (1 / duration);
+  numActiveConfettiLeds = constrain(int(confettiHeight * kMatrixWidth / 0.5), 0, maxActiveConfettiLeds);
 
-  if (t > 1) {
-    t = 0;
+  for (int i = 0; i < numActiveConfettiLeds; i++) {
+    if (activeConfettiLedsT[i] >= 255) {
+      activeConfettiLeds[i] = pick(random(kMatrixWidth), random8(kMatrixHeight - confettiHeight, kMatrixHeight));
+      activeConfettiLedsT[i] = 0;
+    }
+  }
 
-    iterator += 5;
-    if (p[iterator] == -99 || iterator >= MAX_ANI * 5) {
-      iterator = 1;
-      readyToChangeAnimation = true;
+  for (int i = 0; i < maxActiveConfettiLeds; i++) {
+
+    float t = (float) activeConfettiLedsT[i] / 255.0;
+
+    float y = 0;
+    int duration;
+
+    y = (1 - t) * (1 - t) * (1 - t) * curve[0] + 3 * (1 - t) * (1 - t) * t * curve[1] + 3 * (1 - t) * t * t * curve[2] + t * t * t * curve[3]; //Cubic Bezier
+
+    duration = curve[4];
+
+    if (t + (1.0 / duration) >= 1.0) {
+      t = 1.0;
+    } else {
+      t += (1.0 / duration);
     }
 
+    activeConfettiLedsT[i] = (uint8_t)round(t * 255.0);
+    leds[activeConfettiLeds[i]] = CHSV(baseHue + i - int(maxActiveConfettiLeds / 2) , 255,  y * 255);
   }
-  else {
-    readyToChangeAnimation = false;
-  }
-
-  return y;
 }
 
-/**
-   UTILITY FUNCTIONS
-*/
+void reactionAnimation() {
+  float curve[] = {1, 1, 1, 0, 20}; // Hard flash ease out
 
-/**
-   Calculates a number between two numbers at a specific increment.
-   @param x The first number
-   @param y The second number
-   @param lerpBy The amount to interpolate between the two values where 0.0 = x, 1.0 = y, and 0.5 is half-way in between.
-   @return A lerped float
-*/
-float lerpFloat(float x, float y, float lerpBy) {
-  return x - ((x - y) * lerpBy);
+  numActiveReactionLeds = constrain(int(reactionHeight * kMatrixWidth / 0.9), 0, maxActiveReactionLeds);
+
+  for (int i = 0; i < numActiveReactionLeds; i++) {
+    if (activeReactionLedsT[i] >= 1) {
+      activeReactionLeds[i] = pick(random(kMatrixWidth), random8((kMatrixHeight / 2) - (reactionHeight / 2), (kMatrixHeight / 2) + (reactionHeight / 2)));
+      activeReactionLedsT[i] = 0;
+    }
+  }
+
+  for (int i = 0; i < maxActiveReactionLeds; i++) {
+
+    float t = (float) activeReactionLedsT[i] / 255.0;
+
+    float y = 0;
+    int duration;
+
+    y = (1 - t) * (1 - t) * (1 - t) * curve[0] + 3 * (1 - t) * (1 - t) * t * curve[1] + 3 * (1 - t) * t * t * curve[2] + t * t * t * curve[3]; //Cubic Bezier
+
+    duration = curve[4];
+
+    if (t + (1.0 / duration) >= 1.0) {
+      t = 1.0;
+    } else {
+      t += (1.0 / duration);
+    }
+
+    activeReactionLedsT[i] = (uint8_t) round(t * 255.0);
+    leds[activeReactionLeds[i]] = CHSV(baseHue + i - int(maxActiveReactionLeds / 2) , 100,  y * 255);
+  }
 }
+void climaxAnimation() {
+  float curve[] = {1, 1, 1, 0, 70};
 
-/**
-   Map a float, since Arduino can only do it with ints out of the box
-   @param x The float to lerp
-   @param in_min The minimum of the current range
-   @param in_max The maximum of the current range
-   @param out_min The minimum of the desired range
-   @param out_max The maximum of the desired range
-   @return A mapped float
-*/
-float mapFloat(float x, float in_min, float in_max, float out_min, float out_max) {
-  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+  float t = (float) climaxT / 255.0;
+
+  float y = 0;
+  int duration;
+
+  y = (1 - t) * (1 - t) * (1 - t) * curve[0] + 3 * (1 - t) * (1 - t) * t * curve[1] + 3 * (1 - t) * t * t * curve[2] + t * t * t * curve[3]; //Cubic Bezier
+
+  duration = curve[4];
+
+  if (t + (1.0 / duration) >= 1.0) {
+    t = 1.0;
+  } else {
+    t += (1.0 / duration);
+  }
+
+  climaxT = (uint8_t) round(t * 255.0);
+
+  for (int i = 0; i < kMatrixWidth; i++) {
+    for (int j = 0; j < kMatrixHeight; j++) {
+      leds[XY(i, j)] = CHSV(200 + i - int(maxActiveReactionLeds / 2) , 0, 255 * y);
+    }
+  }
 }
