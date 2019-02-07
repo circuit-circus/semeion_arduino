@@ -37,27 +37,6 @@ const bool    kMatrixSerpentineLayout = true;
 #define NUM_LEDS (kMatrixWidth * kMatrixHeight)
 CRGB leds[NUM_LEDS];
 
-uint16_t XY( uint8_t x, uint8_t y) {
-  uint16_t i;
-
-  if ( kMatrixSerpentineLayout == false) {
-    i = (y * kMatrixWidth) + x;
-  }
-
-  if ( kMatrixSerpentineLayout == true) {
-    if ( x & 0x01) {
-      // Odd rows run backwards
-      uint8_t reverseY = (kMatrixHeight - 1) - y;
-      i = (x * kMatrixHeight) + reverseY;
-    } else {
-      // Even rows run forwards
-      i = (x * kMatrixHeight) + y;
-    }
-  }
-
-  return i;
-}
-
 // Doppler sensors
 #define DOPPLER_PIN1 A0
 #define DOPPLER_PIN2 A1
@@ -87,18 +66,22 @@ uint8_t activeConfettiLeds[maxActiveConfettiLeds];
 uint8_t activeConfettiLedsT[maxActiveConfettiLeds];
 
 boolean isReacting = false;
-
 uint8_t reactionHeight = 0;
 const uint8_t maxActiveReactionLeds = 100;
 uint8_t numActiveReactionLeds = 0;
 uint8_t activeReactionLeds[maxActiveReactionLeds];
 uint8_t activeReactionLedsT[maxActiveReactionLeds];
 
+uint8_t animationHeight = 10;
+uint8_t rollUpT = 0;
+boolean isRollingUp = false;
+boolean isRollingDown = false;
+
 uint8_t climaxT;
 long lastClimaxTime;
 int climaxLength = 1000;
 
-//Curves
+//Curves. Leaving these here for easy reference
 //float ease[] = {0, 1.5, 1.07, 0, 50}; // ease-in-out
 //float hard[] = {1, 1, 1, 0, 20}; // Hard flash ease out
 
@@ -140,28 +123,27 @@ void setup() {
 }
 
 void loop() {
-
-  //    Serial.print("H ");
-  //    Serial.print(confettiHeight);
-//    Serial.print(", A ");
-//    Serial.print(currentActivity);
-//    Serial.print(", H ");
-//    Serial.print(reactionHeight);
-//    Serial.print(", BU ");
-//    Serial.println(buildUp);
-//    Serial.print(", HR ");
-//    Serial.print(highestReading);
-//    Serial.print(", C ");
-//    Serial.println(isClimaxing);
-    
-  //    Serial.print(", AL ");
-  //    Serial.println(numActiveConfettiLeds);
-
   determineStates();
   setAnimation();
   FastLED.show();
-
   timer.run();
+
+  //    Serial.print("H ");
+  //    Serial.print(confettiHeight);
+  Serial.print(", A ");
+  Serial.print(currentActivity);
+  Serial.print(", RH ");
+  Serial.print(reactionHeight);
+  Serial.print(", AH ");
+  Serial.print(animationHeight);
+  Serial.print(", BU ");
+  Serial.println(buildUp);
+  //    Serial.print(", HR ");
+  //    Serial.print(highestReading);
+  //    Serial.print(", C ");
+  //    Serial.println(isClimaxing);
+  //    Serial.print(", AL ");
+  //    Serial.println(numActiveConfettiLeds);
 }
 
 void determineStates() {
@@ -169,22 +151,23 @@ void determineStates() {
   if (!isClimaxing) {
 
     if (currentActivity > deactiveThreshold) {
-      //Become active
+      //Be active
+      if (!isActive){
+        rollUpAnimation();  
+      }
       isActive = true;
-      confettiHeight = kMatrixHeight;
       lastInteractionTime = millis();
     } else if (currentActivity < deactiveThreshold && millis() - lastInteractionTime  > timeThreshold) {
       //Become idle
       isActive = false;
       buildUp = 0;
-      confettiHeight = 25;
     }
 
     if (isActive && currentActivity > reactionThreshold) {
       isReacting = true;
       buildUp++;
       buildUp = constrain(buildUp, 0, 255);
-      reactionHeight = map(currentActivity, reactionThreshold, 255, 0, kMatrixHeight);
+      reactionHeight = map(currentActivity, reactionThreshold, 255, 0, animationHeight);
     }
 
     if (buildUp > climaxThreshold) {
@@ -211,6 +194,9 @@ void setAnimation() {
     confettiAnimation();
     if (isReacting) {
       reactionAnimation();
+    }
+    if (isRollingUp) {
+      rollUpAnimation();
     }
   } else {
     climaxAnimation();
@@ -245,39 +231,13 @@ void readCalculate() {
 
 }
 
-int pick(int x_, int y_) {
-  int x = x_;
-  int y = y_;
-  int p = XY(x, y);
-  int checkedPick;
-  boolean isTaken = false;
-  
-    for (int i = 0; i < numActiveConfettiLeds; i++) {
-      if (activeConfettiLeds[i] == p) {
-        isTaken = true;
-      }
-      if (isTaken) {
-        i = 0;
-        isTaken = false;
-  
-        y++;
-        if (y > confettiHeight - 1) {
-          y = 0;
-          x++;
-          if (x > kMatrixWidth - 1) {
-            x = 0;
-          }
-        }
-        p = XY(x, y);
-      }
-    }
-  checkedPick = p;
+void rollUpAnimation() {
+  float curve[] = {0.2, 1.3, 0.5, 1, 100};
 
-  return checkedPick;
+  float y = constrain(animate(curve, rollUpT), 0, 1);
+  animationHeight = kMatrixHeight * y;
+  rollUpT = animateTime(curve[4], rollUpT);
 }
-
-void rollUpAnimation() {}
-void rollDownAnimation() {}
 
 void buildUpAnimation() {
   uint8_t brightness = round(255 * (buildUp / 255.0));
@@ -290,37 +250,23 @@ void buildUpAnimation() {
 
 void confettiAnimation() {
   float curve[] = {0, 1.5, 1.07, 0, 100}; // ease-in-out
+  confettiHeight = animationHeight;
 
   numActiveConfettiLeds = constrain(int(confettiHeight * kMatrixWidth / 0.7), 0, maxActiveConfettiLeds);
 
   for (int i = 0; i < numActiveConfettiLeds; i++) {
     if (activeConfettiLedsT[i] >= 255) {
-      activeConfettiLeds[i] = pick(random(kMatrixWidth), random8(kMatrixHeight - confettiHeight, kMatrixHeight));
+      activeConfettiLeds[i] = pick(random(kMatrixWidth), random8(kMatrixHeight - confettiHeight, kMatrixHeight), activeConfettiLeds, numActiveConfettiLeds, confettiHeight);
       activeConfettiLedsT[i] = 0;
     }
   }
 
   for (int i = 0; i < maxActiveConfettiLeds; i++) {
 
-    float t = (float) activeConfettiLedsT[i] / 255.0;
-
-    if (t < 0.99){
-
-    float y = 0;
-    int duration;
-
-    y = (1 - t) * (1 - t) * (1 - t) * curve[0] + 3 * (1 - t) * (1 - t) * t * curve[1] + 3 * (1 - t) * t * t * curve[2] + t * t * t * curve[3]; //Cubic Bezier
-
-    duration = curve[4];
-
-    if (t + (1.0 / duration) >= 1.0) {
-      t = 1.0;
-    } else {
-      t += (1.0 / duration);
-    }
-
-    activeConfettiLedsT[i] = constrain((uint8_t)round(t * 255.0),0,255);
-    leds[activeConfettiLeds[i]] = CHSV(baseHue + i - int(maxActiveConfettiLeds / 2) , 255,  y * 255);
+    if (activeConfettiLedsT[i] < 254) {
+      float y = animate(curve, activeConfettiLedsT[i]);
+      leds[activeConfettiLeds[i]] = CHSV(baseHue + i - int(maxActiveConfettiLeds / 2) , 255,  y * 255);
+      activeConfettiLedsT[i] = animateTime(curve[4], activeConfettiLedsT[i]);
     }
   }
 }
@@ -328,36 +274,21 @@ void confettiAnimation() {
 void reactionAnimation() {
   float curve[] = {1, 1, 1, 0, 20}; // Hard flash ease out
 
-  numActiveReactionLeds = constrain(int(reactionHeight * kMatrixWidth / 0.9), 0, maxActiveReactionLeds);
+  numActiveReactionLeds = constrain(int(reactionHeight * animationHeight / 0.9), 0, maxActiveReactionLeds);
 
   for (int i = 0; i < numActiveReactionLeds; i++) {
-    if (activeReactionLedsT[i] >= 1) {
-      activeReactionLeds[i] = pick(random(kMatrixWidth), random8((kMatrixHeight / 2) - (reactionHeight / 2), (kMatrixHeight / 2) + (reactionHeight / 2)));
+    if (activeReactionLedsT[i] >= 255) {
+      activeReactionLeds[i] = pick(random(kMatrixWidth), random8((animationHeight / 2) - (reactionHeight / 2), (animationHeight / 2) + (reactionHeight / 2)), activeReactionLeds, numActiveReactionLeds, reactionHeight);
       activeReactionLedsT[i] = 0;
     }
   }
 
   for (int i = 0; i < maxActiveReactionLeds; i++) {
 
-    float t = (float) activeReactionLedsT[i] / 255.0;
-
-    if(t < 0.99){
-
-    float y = 0;
-    int duration;
-
-    y = (1 - t) * (1 - t) * (1 - t) * curve[0] + 3 * (1 - t) * (1 - t) * t * curve[1] + 3 * (1 - t) * t * t * curve[2] + t * t * t * curve[3]; //Cubic Bezier
-
-    duration = curve[4];
-
-    if (t + (1.0 / duration) >= 1.0) {
-      t = 1.0;
-    } else {
-      t += (1.0 / duration);
-    }
-
-    activeReactionLedsT[i] = constrain((uint8_t)round(t * 255.0),0,255);
-    leds[activeReactionLeds[i]] = CHSV(baseHue + i - int(maxActiveReactionLeds / 2) , 100,  y * 255);
+    if (activeReactionLedsT[i] < 254) {
+      float y = animate(curve, activeReactionLedsT[i]);
+      leds[activeReactionLeds[i]] = CHSV(baseHue + i - int(maxActiveReactionLeds / 2) , 100,  y * 255);
+      activeReactionLedsT[i] = animateTime(curve[4], activeReactionLedsT[i]);
     }
   }
 }
@@ -365,14 +296,29 @@ void reactionAnimation() {
 void climaxAnimation() {
   float curve[] = {1, 1, 1, 0, 100};
 
-  float t = (float) climaxT / 255.0;
+  float y = animate(curve, climaxT);
 
+  for (int i = 0; i < kMatrixWidth; i++) {
+    for (int j = 0; j < kMatrixHeight; j++) {
+      leds[XY(i, j)] = CHSV(200 + i - int(maxActiveReactionLeds / 2) , 0, 255 * y);
+    }
+  }
+
+  climaxT = animateTime(curve[4], climaxT);
+}
+
+float animate(float curve[], uint8_t currentTime) {
   float y = 0;
-  int duration;
+  float t = (float) currentTime / 255.0;
 
   y = (1 - t) * (1 - t) * (1 - t) * curve[0] + 3 * (1 - t) * (1 - t) * t * curve[1] + 3 * (1 - t) * t * t * curve[2] + t * t * t * curve[3]; //Cubic Bezier
 
-  duration = curve[4];
+  return y;
+}
+
+uint8_t animateTime(float duration, uint8_t currentTime) {
+
+  float t = (float) currentTime / 255.0;
 
   if (t + (1.0 / duration) >= 1.0) {
     t = 1.0;
@@ -380,15 +326,58 @@ void climaxAnimation() {
     t += (1.0 / duration);
   }
 
-  climaxT = (uint8_t) round(t * 255.0);
-
-  for (int i = 0; i < kMatrixWidth; i++) {
-    for (int j = 0; j < kMatrixHeight; j++) {
-      leds[XY(i, j)] = CHSV(200 + i - int(maxActiveReactionLeds / 2) , 0, 255 * y);
-    }
-  }
+  uint8_t newTime = constrain((uint8_t)round(t * 255.0), 0, 255);
+  return newTime;
 }
 
-void animate(){}
+int pick(int x_, int y_, uint8_t locationArray[], uint8_t arrayLength, uint8_t height) {
+  int x = x_;
+  int y = y_;
+  int p = XY(x, y);
+  int checkedPick;
+  boolean isTaken = false;
 
-void animateTime(){}
+  for (int i = 0; i < arrayLength; i++) {
+    if (locationArray[i] == p) {
+      isTaken = true;
+    }
+    if (isTaken) {
+      i = 0;
+      isTaken = false;
+
+      y--;
+      if (y < 0) {
+        y = height;
+        x--;
+        if (x < 0) {
+          x = kMatrixWidth;
+        }
+      }
+      p = XY(x, y);
+    }
+  }
+  checkedPick = p;
+
+  return checkedPick;
+}
+
+uint16_t XY( uint8_t x, uint8_t y) {
+  uint16_t i;
+
+  if ( kMatrixSerpentineLayout == false) {
+    i = (y * kMatrixWidth) + x;
+  }
+
+  if ( kMatrixSerpentineLayout == true) {
+    if ( x & 0x01) {
+      // Odd rows run backwards
+      uint8_t reverseY = (kMatrixHeight - 1) - y;
+      i = (x * kMatrixHeight) + reverseY;
+    } else {
+      // Even rows run forwards
+      i = (x * kMatrixHeight) + y;
+    }
+  }
+
+  return i;
+}
