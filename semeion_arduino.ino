@@ -42,14 +42,16 @@ CRGB leds[NUM_LEDS];
 #define DOPPLER_PIN2 A1
 
 int currentActivity;
+int lastActivity;
 const uint8_t deactiveThreshold = 80;
 long lastInteractionTime;
 const int timeThreshold = 5000;
 boolean isActive = false;
 boolean isClimaxing = false;
-const uint8_t climaxThreshold = 240;
+boolean isReadyToReact = true;
+const uint8_t climaxThreshold = 20;
 uint8_t buildUp = 0;
-const uint8_t reactionThreshold = 180;
+const uint8_t reactionThreshold = 5;
 
 //Learning values
 int aniSpeed;
@@ -59,7 +61,7 @@ int baseHue = 150;
 int baseSat = 255;
 
 //Animation values
-uint8_t confettiHeight = 25;
+uint8_t confettiHeight;
 const uint8_t maxActiveConfettiLeds = 100;
 uint8_t numActiveConfettiLeds = 71;
 uint8_t activeConfettiLeds[maxActiveConfettiLeds];
@@ -72,7 +74,7 @@ uint8_t numActiveReactionLeds = 0;
 uint8_t activeReactionLeds[maxActiveReactionLeds];
 uint8_t activeReactionLedsT[maxActiveReactionLeds];
 
-uint8_t animationHeight = 10;
+uint8_t animationHeight = 20;
 uint8_t rollUpT = 0;
 boolean isRollingUp = false;
 boolean isRollingDown = false;
@@ -130,20 +132,28 @@ void loop() {
 
   //    Serial.print("H ");
   //    Serial.print(confettiHeight);
+  Serial.print("DOWN ");
+  Serial.print(isRollingDown);
+  Serial.print(" UP ");
+  Serial.print(isRollingUp);
   Serial.print(", A ");
   Serial.print(currentActivity);
-  Serial.print(", RH ");
-  Serial.print(reactionHeight);
+//  Serial.print(", RH ");
+//  Serial.print(reactionHeight);
   Serial.print(", AH ");
   Serial.print(animationHeight);
-  Serial.print(", BU ");
-  Serial.println(buildUp);
+    Serial.print(", R ");
+    Serial.print(isReacting);
+  //  Serial.print(", RTR ");
+  //  Serial.print(isReadyToReact);
+  //  Serial.print(", BU ");
+  //  Serial.println(buildUp);
   //    Serial.print(", HR ");
   //    Serial.print(highestReading);
   //    Serial.print(", C ");
   //    Serial.println(isClimaxing);
-  //    Serial.print(", AL ");
-  //    Serial.println(numActiveConfettiLeds);
+      Serial.print(", AL ");
+      Serial.println(numActiveConfettiLeds);
 }
 
 void determineStates() {
@@ -152,39 +162,49 @@ void determineStates() {
 
     if (currentActivity > deactiveThreshold) {
       //Be active
-      if (!isActive){
-        rollUpAnimation();  
+      if (!isActive) {
+        isRollingUp = true;
       }
       isActive = true;
       lastInteractionTime = millis();
     } else if (currentActivity < deactiveThreshold && millis() - lastInteractionTime  > timeThreshold) {
       //Become idle
+      if (isActive) {
+        isRollingDown = true;
+      }
       isActive = false;
       buildUp = 0;
     }
 
-    if (isActive && currentActivity > reactionThreshold) {
+    if (isActive && isReadyToReact && currentActivity - lastActivity > reactionThreshold) {
       isReacting = true;
       buildUp++;
       buildUp = constrain(buildUp, 0, 255);
       reactionHeight = map(currentActivity, reactionThreshold, 255, 0, animationHeight);
+    }
+    if (isActive && isReadyToReact && currentActivity > 235){
+      //Reaction trail  
     }
 
     if (buildUp > climaxThreshold) {
       //Climax
       isClimaxing = true;
       lastClimaxTime = millis();
-    }
-    if (currentActivity < reactionThreshold) {
+      isRollingDown = true;
+      isActive = false;
       isReacting = false;
-      reactionHeight = 0;
     }
-  } else if (millis() - lastClimaxTime > climaxLength && isClimaxing && climaxT >= 250) {
+
+  } else if (millis() - lastClimaxTime > climaxLength && isClimaxing && climaxT >= 254) {
     isClimaxing = false;
     buildUp = 0;
     climaxT = 0;
   }
-
+  if (rollUpT >= 254) {
+    isRollingUp = false;
+    isRollingDown = false;
+    rollUpT = 0;
+  }
 }
 
 void setAnimation() {
@@ -195,11 +215,13 @@ void setAnimation() {
     if (isReacting) {
       reactionAnimation();
     }
-    if (isRollingUp) {
-      rollUpAnimation();
-    }
   } else {
     climaxAnimation();
+  }
+  if (isRollingUp) {
+    rollUpAnimation(false);
+  } else if (isRollingDown) {
+    rollUpAnimation(true);
   }
 }
 
@@ -227,12 +249,25 @@ void readCalculate() {
     readIndex = 0;
   }
 
+  lastActivity = currentActivity;
   currentActivity = lastSensorAverage;
-
 }
 
-void rollUpAnimation() {
-  float curve[] = {0.2, 1.3, 0.5, 1, 100};
+void rollUpAnimation(boolean inverse) {
+  float curve[5];
+  if (!inverse) {
+    curve[0] = 0.3;
+    curve[1] = 1.3;
+    curve[2] = 0.5;
+    curve[3] = 1.0;
+    curve[4] = 50;
+  } else {
+    curve[0] = 1.0;
+    curve[1] = 0.5;
+    curve[2] = 1.3;
+    curve[3] = 0.3;
+    curve[4] = 50;
+  }
 
   float y = constrain(animate(curve, rollUpT), 0, 1);
   animationHeight = kMatrixHeight * y;
@@ -252,7 +287,7 @@ void confettiAnimation() {
   float curve[] = {0, 1.5, 1.07, 0, 100}; // ease-in-out
   confettiHeight = animationHeight;
 
-  numActiveConfettiLeds = constrain(int(confettiHeight * kMatrixWidth / 0.7), 0, maxActiveConfettiLeds);
+  numActiveConfettiLeds = constrain(int((confettiHeight * kMatrixWidth) * 0.7), 0, maxActiveConfettiLeds);
 
   for (int i = 0; i < numActiveConfettiLeds; i++) {
     if (activeConfettiLedsT[i] >= 255) {
@@ -266,7 +301,12 @@ void confettiAnimation() {
     if (activeConfettiLedsT[i] < 254) {
       float y = animate(curve, activeConfettiLedsT[i]);
       leds[activeConfettiLeds[i]] = CHSV(baseHue + i - int(maxActiveConfettiLeds / 2) , 255,  y * 255);
-      activeConfettiLedsT[i] = animateTime(curve[4], activeConfettiLedsT[i]);
+
+//      if (currentActivity > 220) {
+//        activeConfettiLedsT[i] = animateTime(curve[4], activeConfettiLedsT[i], 2.0);
+//      } else {
+        activeConfettiLedsT[i] = animateTime(curve[4], activeConfettiLedsT[i]);
+//      }
     }
   }
 }
@@ -274,22 +314,34 @@ void confettiAnimation() {
 void reactionAnimation() {
   float curve[] = {1, 1, 1, 0, 20}; // Hard flash ease out
 
-  numActiveReactionLeds = constrain(int(reactionHeight * animationHeight / 0.9), 0, maxActiveReactionLeds);
+  boolean stillReacting = false;
 
-  for (int i = 0; i < numActiveReactionLeds; i++) {
-    if (activeReactionLedsT[i] >= 255) {
-      activeReactionLeds[i] = pick(random(kMatrixWidth), random8((animationHeight / 2) - (reactionHeight / 2), (animationHeight / 2) + (reactionHeight / 2)), activeReactionLeds, numActiveReactionLeds, reactionHeight);
-      activeReactionLedsT[i] = 0;
+  numActiveReactionLeds = constrain(int((reactionHeight * kMatrixWidth) * 0.7), 0, maxActiveReactionLeds);
+
+  if (isReadyToReact) {
+    for (int i = 0; i < numActiveReactionLeds; i++) {
+      if (activeReactionLedsT[i] >= 255) {
+        activeReactionLeds[i] = pick(random(kMatrixWidth), random8(kMatrixHeight - (animationHeight / 2) - (reactionHeight / 2), kMatrixHeight - (animationHeight / 2) + (reactionHeight / 2)), activeReactionLeds, numActiveReactionLeds, reactionHeight);
+        activeReactionLedsT[i] = 0;
+      }
     }
   }
 
-  for (int i = 0; i < maxActiveReactionLeds; i++) {
+  isReadyToReact = false;
 
+  for (int i = 0; i < maxActiveReactionLeds; i++) {
     if (activeReactionLedsT[i] < 254) {
       float y = animate(curve, activeReactionLedsT[i]);
       leds[activeReactionLeds[i]] = CHSV(baseHue + i - int(maxActiveReactionLeds / 2) , 100,  y * 255);
+      //leds[activeReactionLeds[i]] = CHSV(0, 255,  y * 255);
       activeReactionLedsT[i] = animateTime(curve[4], activeReactionLedsT[i]);
+      stillReacting = true;
     }
+  }
+
+  if (!stillReacting) {
+    isReadyToReact = true;
+    isReacting = false;
   }
 }
 
@@ -316,18 +368,22 @@ float animate(float curve[], uint8_t currentTime) {
   return y;
 }
 
-uint8_t animateTime(float duration, uint8_t currentTime) {
+uint8_t animateTime(float duration, uint8_t currentTime, float speedMultiplier) {
 
   float t = (float) currentTime / 255.0;
 
-  if (t + (1.0 / duration) >= 1.0) {
+  if (t + (speedMultiplier / duration) >= 1.0) {
     t = 1.0;
   } else {
-    t += (1.0 / duration);
+    t += (speedMultiplier / duration);
   }
 
   uint8_t newTime = constrain((uint8_t)round(t * 255.0), 0, 255);
   return newTime;
+}
+
+uint8_t animateTime(float duration, uint8_t currentTime) {
+  return animateTime(duration, currentTime, 1.0);
 }
 
 int pick(int x_, int y_, uint8_t locationArray[], uint8_t arrayLength, uint8_t height) {
@@ -337,25 +393,25 @@ int pick(int x_, int y_, uint8_t locationArray[], uint8_t arrayLength, uint8_t h
   int checkedPick;
   boolean isTaken = false;
 
-  for (int i = 0; i < arrayLength; i++) {
-    if (locationArray[i] == p) {
-      isTaken = true;
-    }
-    if (isTaken) {
-      i = 0;
-      isTaken = false;
-
-      y--;
-      if (y < 0) {
-        y = height;
-        x--;
-        if (x < 0) {
-          x = kMatrixWidth;
-        }
-      }
-      p = XY(x, y);
-    }
-  }
+  //  for (int i = 0; i < arrayLength; i++) {
+  //    if (locationArray[i] == p) {
+  //      isTaken = true;
+  //    }
+  //    if (isTaken) {
+  //      i = 0;
+  //      isTaken = false;
+  //
+  //      y--;
+  //      if (y < 0) {
+  //        y = height;
+  //        x--;
+  //        if (x < 0) {
+  //          x = kMatrixWidth;
+  //        }
+  //      }
+  //      p = XY(x, y);
+  //    }
+  //  }
   checkedPick = p;
 
   return checkedPick;
