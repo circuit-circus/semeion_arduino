@@ -15,7 +15,7 @@
 
 
 // INCLUDES
-#include <FastLED.h>
+#include <FastLED_Rotated.h>
 #include <SimpleTimer.h>
 
 // LED
@@ -27,100 +27,117 @@ const uint8_t kMatrixHeight = 58;
 // Param for different pixel layouts
 const bool    kMatrixSerpentineLayout = true;
 
-#define LED_PIN  2
-
 #define COLOR_ORDER GRB
 #define CHIPSET     WS2812B
 
 #define BRIGHTNESS 255
 
 #define NUM_LEDS (kMatrixWidth * kMatrixHeight)
-CRGB leds[NUM_LEDS];
 
-// Doppler sensors
-#define DOPPLER_PIN1 A0
-#define DOPPLER_PIN2 A1
+// GENERAL VARIABLES
 
-int currentActivity;
-int lastActivity;
-const uint8_t deactiveThreshold = 80;
-long lastInteractionTime;
-const int timeThreshold = 5000;
-boolean isActive = false;
-boolean isClimaxing = false;
-boolean isReadyToReact = true;
-const uint8_t climaxThreshold = 20;
-uint8_t buildUp = 0;
-const uint8_t reactionThreshold = 5;
+const uint8_t numSides = 2;
 
-//Learning values
-int aniSpeed;
-int chaos;
+//Animation
+
 int baseHue = 150;
-
 int baseSat = 255;
 
-//Animation values
-uint8_t confettiHeight;
-const uint8_t maxActiveConfettiLeds = 100;
-uint8_t numActiveConfettiLeds = 71;
-uint8_t activeConfettiLeds[maxActiveConfettiLeds];
-uint8_t activeConfettiLedsT[maxActiveConfettiLeds];
-
-boolean isReacting = false;
-uint8_t reactionHeight = 0;
-const uint8_t maxActiveReactionLeds = 100;
-uint8_t numActiveReactionLeds = 0;
-uint8_t activeReactionLeds[maxActiveReactionLeds];
-uint8_t activeReactionLedsT[maxActiveReactionLeds];
-
-uint8_t animationHeight = 20;
-uint8_t rollUpT = 0;
-boolean isRollingUp = false;
-boolean isRollingDown = false;
-
-uint8_t climaxT;
-long lastClimaxTime;
-int climaxLength = 1000;
+const uint8_t climaxThreshold = 20;
+const uint8_t deactiveThreshold = 80;
+const int timeThreshold = 5000;
+const uint8_t reactionThreshold = 5;
+const uint8_t maxActiveConfettiLeds = 80;
+const uint8_t maxActiveReactionLeds = 50;
 
 //Curves. Leaving these here for easy reference
 //float ease[] = {0, 1.5, 1.07, 0, 50}; // ease-in-out
 //float hard[] = {1, 1, 1, 0, 20}; // Hard flash ease out
 
-int valToUse;
-int dopplerVal1; // Mellem 500-1024, skal smoothes
+static uint16_t noiseX;
+static uint16_t noiseY;
+static uint16_t noiseZ;
+static uint16_t hueNoiseX;
+static uint16_t hueNoiseY;
+static uint16_t hueNoiseZ;
+static int noiseScale = 10;
+static int noiseOctaves = 2;
+uint16_t noiseSpeed = 5;
+
+//Input
 const int numReadings = 10;
-int lastSensorAverage; // det sidste stykke tids læsninger
-int lastSensorTotal;
-int lastSensorReadings[numReadings];
-int readIndex;
-
-// These will be used to determine lower and higher bounds
-int lowestReading = 520;
-int highestReading = 100;
-
-boolean goingDown = true;
-
-int iterator = 1;
-#define MAX_ANI 1;
 
 SimpleTimer timer;
+
+// UNIQUE VARIABLES
+
+CRGB leds[2][NUM_LEDS];
+
+const uint8_t ledPin[] = {2, 3};
+const uint8_t dopplerPin[] = {A0, A1};
+
+int currentActivity[2];
+int lastActivity[2];
+long lastInteractionTime[2];
+
+boolean isActive[] = {false, false};
+boolean isClimaxing[] = {false, false};
+boolean isReadyToReact[] = {true, true};
+boolean isReacting[] = {false, false};
+
+uint8_t buildUp[] = {0, 0};
+uint8_t confettiHeight[2];
+uint8_t reactionHeight[] = {0, 0};
+uint8_t animationHeight[] = {20, 20};
+
+//uint8_t numActiveConfettiLeds[] = {71, 71};
+//uint8_t activeConfettiLeds[2][maxActiveConfettiLeds];
+//uint8_t activeConfettiLedsT[2][maxActiveConfettiLeds];
+
+uint8_t dotPositionX[2][2];
+uint8_t dotPositionY[2][2];
+
+uint8_t numActiveReactionLeds[] = {0, 0};
+uint8_t activeReactionLeds[2][maxActiveReactionLeds];
+uint8_t activeReactionLedsT[2][maxActiveReactionLeds];
+
+uint8_t rollUpT[] = {0, 0};
+boolean isRollingUp[] = {false, false};
+boolean isRollingDown[] = {false, false};
+
+uint8_t climaxT[2];
+long lastClimaxTime[2];
+int climaxLength[] = {1000, 1000};
+
+int dopplerVal[2]; // Mellem 500-1024, skal smoothes
+
+int lastSensorAverage[2]; // det sidste stykke tids læsninger
+int lastSensorTotal[2];
+int lastSensorReadings[2][numReadings];
+int readIndex[2];
+
+// These will be used to determine lower and higher bounds
+int lowestReading[] = {520, 520};
+int highestReading[] = {100, 100};
 
 void setup() {
   Serial.begin(9600);
 
-  FastLED.addLeds<CHIPSET, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalSMD5050);
-  FastLED.setBrightness( BRIGHTNESS );
+  FastLED.addLeds<CHIPSET, 2, COLOR_ORDER>(leds[0], NUM_LEDS).setCorrection(TypicalSMD5050);
+  FastLED.addLeds<CHIPSET, 3, COLOR_ORDER>(leds[1], NUM_LEDS).setCorrection(TypicalSMD5050);
 
-  pinMode(DOPPLER_PIN1, INPUT);
+  FastLED.setBrightness( BRIGHTNESS );
 
   timer.setInterval(50, readCalculate);
 
-  fill_solid(leds, kMatrixWidth * kMatrixHeight, CRGB::Black);
+  for (int s = 0; s < numSides; s++) {
+    pinMode(dopplerPin[s], INPUT);
 
-  for (int i = 0; i < maxActiveConfettiLeds; i++) {
-    activeConfettiLeds[i] = random8(kMatrixWidth * kMatrixHeight - 1);
-    activeConfettiLedsT[i] = random8(1, 255);
+    fill_solid(leds[s], kMatrixWidth * kMatrixHeight, CRGB::Black);
+    //    for (int i = 0; i < maxActiveConfettiLeds; i++) {
+    //      activeConfettiLeds[s][i] = random8(kMatrixWidth * kMatrixHeight - 1);
+    //      activeConfettiLedsT[s][i] = random8(1, 255);
+    //    }
   }
 }
 
@@ -130,130 +147,137 @@ void loop() {
   FastLED.show();
   timer.run();
 
-  //    Serial.print("H ");
-  //    Serial.print(confettiHeight);
-  Serial.print("DOWN ");
-  Serial.print(isRollingDown);
-  Serial.print(" UP ");
-  Serial.print(isRollingUp);
-  Serial.print(", A ");
-  Serial.print(currentActivity);
-//  Serial.print(", RH ");
-//  Serial.print(reactionHeight);
-  Serial.print(", AH ");
-  Serial.print(animationHeight);
-    Serial.print(", R ");
-    Serial.print(isReacting);
+  //  Serial.print("H ");
+  //  Serial.print(confettiHeight);
+//    Serial.print("DOWN ");
+//    Serial.print(isRollingDown[0]);
+//    Serial.print(" UP ");
+//    Serial.print(isRollingUp[0]);
+//    Serial.print(", A ");
+//    Serial.print(currentActivity[0]);
+//  //  Serial.print(", RH ");
+//  //  Serial.print(reactionHeight);
+   // Serial.print(", AH ");
+    //Serial.println(animationHeight[0]);
+  //  Serial.print(", R ");
+  //  Serial.print(isReacting);
   //  Serial.print(", RTR ");
   //  Serial.print(isReadyToReact);
   //  Serial.print(", BU ");
   //  Serial.println(buildUp);
-  //    Serial.print(", HR ");
-  //    Serial.print(highestReading);
-  //    Serial.print(", C ");
-  //    Serial.println(isClimaxing);
-      Serial.print(", AL ");
-      Serial.println(numActiveConfettiLeds);
+  //  Serial.print(", HR ");
+  //  Serial.print(highestReading);
+  //  Serial.print(", C ");
+  //  Serial.println(isClimaxing);
+  //  Serial.print(", AL ");
+  //  Serial.println(numActiveConfettiLeds);
 }
 
 void determineStates() {
 
-  if (!isClimaxing) {
+  for (int s = 0; s < numSides; s++) {
 
-    if (currentActivity > deactiveThreshold) {
-      //Be active
-      if (!isActive) {
-        isRollingUp = true;
+    if (!isClimaxing[s]) {
+
+      if (currentActivity[s] > deactiveThreshold) {
+        //Be active
+        if (!isActive[s]) {
+          isRollingUp[s] = true;
+        }
+        isActive[s] = true;
+        lastInteractionTime[s] = millis();
+      } else if (currentActivity[s] < deactiveThreshold && millis() - lastInteractionTime[s]  > timeThreshold) {
+        //Become idle
+        if (isActive[s]) {
+          isRollingDown[s] = true;
+        }
+        isActive[s] = false;
+        buildUp[s] = 0;
       }
-      isActive = true;
-      lastInteractionTime = millis();
-    } else if (currentActivity < deactiveThreshold && millis() - lastInteractionTime  > timeThreshold) {
-      //Become idle
-      if (isActive) {
-        isRollingDown = true;
+
+      if (isActive[s] && isReadyToReact[s] && currentActivity[s] - lastActivity[s] > reactionThreshold) {
+        isReacting[s] = true;
+        buildUp[s]++;
+        buildUp[s] = constrain(buildUp[s], 0, 255);
+        reactionHeight[s] = map(currentActivity[s], reactionThreshold, 255, 0, animationHeight[s]);
       }
-      isActive = false;
-      buildUp = 0;
-    }
+      if (isActive[s] && isReadyToReact[s] && currentActivity[s] > 235) {
+        //Reaction trail
+      }
 
-    if (isActive && isReadyToReact && currentActivity - lastActivity > reactionThreshold) {
-      isReacting = true;
-      buildUp++;
-      buildUp = constrain(buildUp, 0, 255);
-      reactionHeight = map(currentActivity, reactionThreshold, 255, 0, animationHeight);
-    }
-    if (isActive && isReadyToReact && currentActivity > 235){
-      //Reaction trail  
-    }
+      if (buildUp[s] > climaxThreshold) {
+        //Climax
+        isClimaxing[s] = true;
+        lastClimaxTime[s] = millis();
+        isRollingDown[s] = true;
+        isActive[s] = false;
+        isReacting[s] = false;
+      }
 
-    if (buildUp > climaxThreshold) {
-      //Climax
-      isClimaxing = true;
-      lastClimaxTime = millis();
-      isRollingDown = true;
-      isActive = false;
-      isReacting = false;
+    } else if (millis() - lastClimaxTime[s] > climaxLength[s] && isClimaxing[s] && climaxT[s] >= 254) {
+      isClimaxing[s] = false;
+      buildUp[s] = 0;
+      climaxT[s] = 0;
     }
-
-  } else if (millis() - lastClimaxTime > climaxLength && isClimaxing && climaxT >= 254) {
-    isClimaxing = false;
-    buildUp = 0;
-    climaxT = 0;
-  }
-  if (rollUpT >= 254) {
-    isRollingUp = false;
-    isRollingDown = false;
-    rollUpT = 0;
+    if (rollUpT[s] >= 254) {
+      isRollingUp[s] = false;
+      isRollingDown[s] = false;
+      rollUpT[s] = 0;
+    }
   }
 }
 
 void setAnimation() {
-
-  if (!isClimaxing) {
-    //buildUpAnimation();
-    confettiAnimation();
-    if (isReacting) {
-      reactionAnimation();
+  for (int s = 0; s < numSides; s++) {
+    if (!isClimaxing[s]) {
+      //buildUpAnimation(s);
+      //confettiAnimation(s);
+      exploreAnimation(s);
+      if (isReacting[s]) {
+        reactionAnimation(s);
+      }
+    } else {
+      climaxAnimation(s);
     }
-  } else {
-    climaxAnimation();
-  }
-  if (isRollingUp) {
-    rollUpAnimation(false);
-  } else if (isRollingDown) {
-    rollUpAnimation(true);
+    if (isRollingUp[s]) {
+      rollUpAnimation(s, false);
+    } else if (isRollingDown[s]) {
+      rollUpAnimation(s, true);
+    }
   }
 }
 
 void readCalculate() {
 
-  dopplerVal1 = analogRead(DOPPLER_PIN1);
+  for (int s = 0; s < numSides; s++) {
+    dopplerVal[s] = analogRead(dopplerPin[s]);
 
-  if (dopplerVal1 < lowestReading) {
-    lowestReading = dopplerVal1;
+    if (dopplerVal[s] < lowestReading[s]) {
+      lowestReading[s] = dopplerVal[s];
+    }
+
+    if (dopplerVal[s] > highestReading[s]) {
+      highestReading[s] = dopplerVal[s];
+    }
+
+    dopplerVal[s] = map(dopplerVal[s], lowestReading[s], highestReading[s], 0, 255);
+
+    // Calculate last average
+    lastSensorTotal[s] = lastSensorTotal[s] - lastSensorReadings[s][readIndex[s]];
+    lastSensorReadings[s][readIndex[s]] = dopplerVal[s];
+    lastSensorTotal[s] = lastSensorTotal[s] + lastSensorReadings[s][readIndex[s]];
+    lastSensorAverage[s] = lastSensorTotal[s] / numReadings;
+    readIndex[s] += 1;
+    if (readIndex[s] >= numReadings) {
+      readIndex[s] = 0;
+    }
+
+    lastActivity[s] = currentActivity[s];
+    currentActivity[s] = lastSensorAverage[s];
   }
-
-  if (dopplerVal1 > highestReading) {
-    highestReading = dopplerVal1;
-  }
-
-  dopplerVal1 = map(dopplerVal1, lowestReading, highestReading, 0, 255);
-
-  // Calculate last average
-  lastSensorTotal = lastSensorTotal - lastSensorReadings[readIndex];
-  lastSensorReadings[readIndex] = dopplerVal1;
-  lastSensorTotal = lastSensorTotal + lastSensorReadings[readIndex];
-  lastSensorAverage = lastSensorTotal / numReadings;
-  readIndex += 1;
-  if (readIndex >= numReadings) {
-    readIndex = 0;
-  }
-
-  lastActivity = currentActivity;
-  currentActivity = lastSensorAverage;
 }
 
-void rollUpAnimation(boolean inverse) {
+void rollUpAnimation(uint8_t s, boolean inverse) {
   float curve[5];
   if (!inverse) {
     curve[0] = 0.3;
@@ -269,94 +293,105 @@ void rollUpAnimation(boolean inverse) {
     curve[4] = 50;
   }
 
-  float y = constrain(animate(curve, rollUpT), 0, 1);
-  animationHeight = kMatrixHeight * y;
-  rollUpT = animateTime(curve[4], rollUpT);
+  float y = constrain(animate(curve, rollUpT[s]), 0, 1);
+  animationHeight[s] = kMatrixHeight * y;
+  rollUpT[s] = animateTime(curve[4], rollUpT[s]);
 }
 
-void buildUpAnimation() {
-  uint8_t brightness = round(255 * (buildUp / 255.0));
+void buildUpAnimation(uint8_t s) {
+  uint8_t brightness = round(255 * (buildUp[s] / 255.0));
   for (int i = 0; i < kMatrixWidth; i++) {
     for (int j = 0; j < kMatrixHeight; j++) {
-      leds[XY(i, j)] = CHSV(200, 0, brightness);
+      leds[s][XY(i, j)] = CHSV(200, 0, brightness);
     }
   }
 }
 
-void confettiAnimation() {
-  float curve[] = {0, 1.5, 1.07, 0, 100}; // ease-in-out
-  confettiHeight = animationHeight;
+//void confettiAnimation(uint8_t s) {
+//  float curve[] = {0, 1.5, 1.07, 0, 100}; // ease-in-out
+//  confettiHeight[s] = animationHeight[s];
+//
+//  numActiveConfettiLeds[s] = constrain(int((confettiHeight[s] * kMatrixWidth) * 0.7), 0, maxActiveConfettiLeds);
+//
+//  for (int i = 0; i < numActiveConfettiLeds[s]; i++) {
+//    if (activeConfettiLedsT[s][i] >= 255) {
+//      activeConfettiLeds[s][i] = pick(random(kMatrixWidth), random8(kMatrixHeight - confettiHeight[s], kMatrixHeight), activeConfettiLeds[s], numActiveConfettiLeds[s], confettiHeight[s]);
+//      activeConfettiLedsT[s][i] = 0;
+//    }
+//  }
+//
+//  for (int i = 0; i < maxActiveConfettiLeds; i++) {
+//
+//    if (activeConfettiLedsT[s][i] < 254) {
+//      float y = animate(curve, activeConfettiLedsT[s][i]);
+//      leds[s][activeConfettiLeds[s][i]] = CHSV(baseHue + i - int(maxActiveConfettiLeds / 2) , 255,  y * 255);
+//
+//      //      if (currentActivity > 220) {
+//      //        activeConfettiLedsT[i] = animateTime(curve[4], activeConfettiLedsT[i], 2.0);
+//      //      } else {
+//      activeConfettiLedsT[s][i] = animateTime(curve[4], activeConfettiLedsT[s][i]);
+//      //      }
+//    }
+//  }
+//}
 
-  numActiveConfettiLeds = constrain(int((confettiHeight * kMatrixWidth) * 0.7), 0, maxActiveConfettiLeds);
+void exploreAnimation(uint8_t s) {
+  //Make explorative animation
 
-  for (int i = 0; i < numActiveConfettiLeds; i++) {
-    if (activeConfettiLedsT[i] >= 255) {
-      activeConfettiLeds[i] = pick(random(kMatrixWidth), random8(kMatrixHeight - confettiHeight, kMatrixHeight), activeConfettiLeds, numActiveConfettiLeds, confettiHeight);
-      activeConfettiLedsT[i] = 0;
-    }
-  }
+  fill_2dnoise8 (leds[s], kMatrixWidth, animationHeight[s], true, noiseOctaves, noiseX, noiseScale, noiseY, noiseScale, noiseZ, noiseOctaves, hueNoiseX, noiseScale, hueNoiseY, noiseScale, hueNoiseZ, true);
+  noiseZ += noiseSpeed;
+  hueNoiseZ += noiseSpeed / 2;
 
-  for (int i = 0; i < maxActiveConfettiLeds; i++) {
+  //Then draw the two "eyes" and animate them
 
-    if (activeConfettiLedsT[i] < 254) {
-      float y = animate(curve, activeConfettiLedsT[i]);
-      leds[activeConfettiLeds[i]] = CHSV(baseHue + i - int(maxActiveConfettiLeds / 2) , 255,  y * 255);
-
-//      if (currentActivity > 220) {
-//        activeConfettiLedsT[i] = animateTime(curve[4], activeConfettiLedsT[i], 2.0);
-//      } else {
-        activeConfettiLedsT[i] = animateTime(curve[4], activeConfettiLedsT[i]);
-//      }
-    }
-  }
 }
 
-void reactionAnimation() {
+void reactionAnimation(uint8_t s) {
   float curve[] = {1, 1, 1, 0, 20}; // Hard flash ease out
 
   boolean stillReacting = false;
 
-  numActiveReactionLeds = constrain(int((reactionHeight * kMatrixWidth) * 0.7), 0, maxActiveReactionLeds);
+  numActiveReactionLeds[s] = constrain(int((reactionHeight[s] * kMatrixWidth) * 0.7), 0, maxActiveReactionLeds);
 
-  if (isReadyToReact) {
-    for (int i = 0; i < numActiveReactionLeds; i++) {
-      if (activeReactionLedsT[i] >= 255) {
-        activeReactionLeds[i] = pick(random(kMatrixWidth), random8(kMatrixHeight - (animationHeight / 2) - (reactionHeight / 2), kMatrixHeight - (animationHeight / 2) + (reactionHeight / 2)), activeReactionLeds, numActiveReactionLeds, reactionHeight);
-        activeReactionLedsT[i] = 0;
+  if (isReadyToReact[s]) {
+    for (int i = 0; i < numActiveReactionLeds[s]; i++) {
+      if (activeReactionLedsT[s][i] >= 255) {
+        activeReactionLeds[s][i] = pick(random(kMatrixWidth), random8(kMatrixHeight - (animationHeight[s] / 2) - (reactionHeight[s] / 2), kMatrixHeight - (animationHeight[s] / 2) + (reactionHeight[s] / 2)), activeReactionLeds[s], numActiveReactionLeds[s], reactionHeight[s]);
+        activeReactionLedsT[s][i] = 0;
       }
     }
   }
 
-  isReadyToReact = false;
+  isReadyToReact[s] = false;
 
   for (int i = 0; i < maxActiveReactionLeds; i++) {
-    if (activeReactionLedsT[i] < 254) {
-      float y = animate(curve, activeReactionLedsT[i]);
-      leds[activeReactionLeds[i]] = CHSV(baseHue + i - int(maxActiveReactionLeds / 2) , 100,  y * 255);
-      //leds[activeReactionLeds[i]] = CHSV(0, 255,  y * 255);
-      activeReactionLedsT[i] = animateTime(curve[4], activeReactionLedsT[i]);
+    if (activeReactionLedsT[s][i] < 254) {
+      float y = animate(curve, activeReactionLedsT[s][i]);
+      leds[s][activeReactionLeds[s][i]] = CHSV(baseHue + i - int(maxActiveReactionLeds / 2) , 100,  y * 255);
+      //leds[activeReactionLeds[s][i]] = CHSV(0, 255,  y * 255);
+      activeReactionLedsT[s][i] = animateTime(curve[4], activeReactionLedsT[s][i]);
       stillReacting = true;
     }
   }
 
   if (!stillReacting) {
-    isReadyToReact = true;
-    isReacting = false;
+    isReadyToReact[s] = true;
+    isReacting[s] = false;
   }
 }
 
-void climaxAnimation() {
+void climaxAnimation(uint8_t s) {
   float curve[] = {1, 1, 1, 0, 100};
 
-  float y = animate(curve, climaxT);
+  float y = animate(curve, climaxT[s]);
 
   for (int i = 0; i < kMatrixWidth; i++) {
     for (int j = 0; j < kMatrixHeight; j++) {
-      leds[XY(i, j)] = CHSV(200 + i - int(maxActiveReactionLeds / 2) , 0, 255 * y);
+      leds[s][XY(i, j)] = CHSV(200 + i - int(maxActiveReactionLeds / 2) , 0, 255 * y);
     }
   }
 
-  climaxT = animateTime(curve[4], climaxT);
+  climaxT[s] = animateTime(curve[4], climaxT[s]);
 }
 
 float animate(float curve[], uint8_t currentTime) {
@@ -393,25 +428,25 @@ int pick(int x_, int y_, uint8_t locationArray[], uint8_t arrayLength, uint8_t h
   int checkedPick;
   boolean isTaken = false;
 
-  //  for (int i = 0; i < arrayLength; i++) {
-  //    if (locationArray[i] == p) {
-  //      isTaken = true;
-  //    }
-  //    if (isTaken) {
-  //      i = 0;
-  //      isTaken = false;
-  //
-  //      y--;
-  //      if (y < 0) {
-  //        y = height;
-  //        x--;
-  //        if (x < 0) {
-  //          x = kMatrixWidth;
-  //        }
-  //      }
-  //      p = XY(x, y);
-  //    }
-  //  }
+  for (int i = 0; i < arrayLength; i++) {
+    if (locationArray[i] == p) {
+      isTaken = true;
+    }
+    if (isTaken) {
+      i = 0;
+      isTaken = false;
+
+      y--;
+      if (y < 0) {
+        y = height;
+        x--;
+        if (x < 0) {
+          x = kMatrixWidth;
+        }
+      }
+      p = XY(x, y);
+    }
+  }
   checkedPick = p;
 
   return checkedPick;
