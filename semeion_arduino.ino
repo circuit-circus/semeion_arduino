@@ -15,7 +15,7 @@
 
 
 // INCLUDES
-#include <FastLED_Rotated.h>
+#include <FastLED.h>
 #include <SimpleTimer.h>
 
 // LED
@@ -81,6 +81,7 @@ int lastActivity[2];
 long lastInteractionTime[2];
 
 boolean isActive[] = {false, false};
+boolean wasActive[] = {false, false};
 boolean isClimaxing[] = {false, false};
 boolean isReadyToReact[] = {true, true};
 boolean isReacting[] = {false, false};
@@ -97,6 +98,7 @@ uint8_t animationHeight[] = {20, 20};
 uint8_t dotPositionY[2][2]; //Side, dot number
 uint8_t dotTarget[2][2];
 uint8_t dotT[2][2];
+//uint8_t waveT[2][2];
 boolean isDotMoving[2][2];
 
 uint8_t numActiveReactionLeds[] = {0, 0};
@@ -154,15 +156,15 @@ void loop() {
   //    Serial.print("DOWN ");
   //    Serial.print(isRollingDown[0]);
   //    Serial.print(" UP ");
-  //    Serial.print(isRollingUp[0]);
-  //    Serial.print(", A ");
-  //    Serial.print(currentActivity[0]);
-  //  //  Serial.print(", RH ");
-  //  //  Serial.print(reactionHeight);
-  //    Serial.print(", Y ");
-  //    Serial.print(dotPositionY[0][0]);
-  //    Serial.print(", T ");
-  //    Serial.print(dotTarget[0][0]);
+  //  //    Serial.print(isRollingUp[0]);
+  //        Serial.print(", A ");
+  //        Serial.print(currentActivity[0]);
+  //  //  //  Serial.print(", RH ");
+  //  //  //  Serial.print(reactionHeight);
+//          Serial.print(", Y ");
+//          Serial.print(dotPositionY[0][0]);
+//          Serial.print(", T ");
+//          Serial.println(dotTarget[0][0]);
   //    Serial.print(", AH ");
   //    Serial.println(animationHeight[0]);
   //  Serial.print(", R ");
@@ -245,11 +247,11 @@ void setAnimation() {
     } else {
       climaxAnimation(s);
     }
-    if (isRollingUp[s]) {
-      rollUpAnimation(s, false);
-    } else if (isRollingDown[s]) {
-      rollUpAnimation(s, true);
-    }
+    //    if (isRollingUp[s]) {
+    //      rollUpAnimation(s, false);
+    //    } else if (isRollingDown[s]) {
+    //      rollUpAnimation(s, true);
+    //    }
   }
 }
 
@@ -342,42 +344,81 @@ void buildUpAnimation(uint8_t s) {
 //}
 
 void exploreAnimation(uint8_t s) {
-  float curve[] = {0.0, 1.59, 0.03, 1.0, 20};
-
+  float curious[] = {0.0, 1.59, 0.03, 1.0, 20};
+  float hurry[] = {0.0, 0.98, 1.0, 1.0, 20};
+  float curve[5]; 
+  
   //Make explorative animation
   fill_solid(leds[s], kMatrixHeight * kMatrixWidth, CRGB::Black);
   fill_2dnoise8 (leds[s], kMatrixWidth, kMatrixHeight, true, noiseOctaves, noiseX, noiseScale, noiseY, noiseScale, noiseZ, noiseOctaves, hueNoiseX, noiseScale, hueNoiseY, noiseScale, hueNoiseZ, true);
-//  for (int y = kMatrixHeight - animationHeight[s]; y >= 0; y--) {
-//    for (int x = 0; x < kMatrixWidth; x++) {
-//      leds[s][XY(x, y)] = CRGB::Black;
-//    }
-//  }
 
   //fill_solid(leds[s], animationHeight[s] * kMatrixWidth, CRGB::Green);
   noiseZ += noiseSpeed;
   hueNoiseZ += noiseSpeed;
 
-  //Then draw the two "eyes" and animate them
   for (int x = 0; x < 2; x++) {
-    if (!isDotMoving[s][x]) {
-      dotT[s][x] = 0;
-      dotTarget[s][x] = random8(kMatrixHeight - animationHeight[s], kMatrixHeight);
-      isDotMoving[s][x] = true;
-    }
+    
+    if (isActive[s] && wasActive[s]) {
+       //If Semeion is active and is not changing. Make the two dots oscillate with the currentActivity level
+      dotPositionY[s][x] = kMatrixHeight / 2 + round((sin8(dotT[s][x]) / 25.5));
+      leds[s][XY(x, dotPositionY[s][x])] = CRGB::Blue;
+      dotT[s][x] += 5;
+      if (dotT[s][x] > 255){
+       dotT[s][x] = 0;
+      }
+//      if (s == 0 && x == 0){
+//        //Serial.println("Oscillating");
+//        Serial.println(dotPositionY[s][x]);
+//       }
+    } else {
+      //First check if and animation is running
+      if (!isDotMoving[s][x]) {
+        dotT[s][x] = 0;
+        dotPositionY[s][x] = dotTarget[s][x];
+        if (!isActive[s]) {
+          if (wasActive){
+            //If the animation in changing back from the active state, make sure to use the right animation
+            memcpy(curve, curious, 5 * sizeof(float));
+          }
+          //Pick a random target to move to
+          dotTarget[s][x] = (uint8_t)random8(kMatrixHeight);
+                if (s == 0 && x == 0){
+        Serial.println("Exploring");
+       }
 
-    uint8_t delta = dotTarget[s][x] - dotPositionY[s][x];
-    float deltaY = delta * animate(curve, dotT[s][x]);
-    uint8_t adjustedTime = delta * curve[4];
-    leds[s][XY(x, round(dotPositionY[s][x] + deltaY))] = CRGB::Red;
-    dotT[s][x] = animateTime(adjustedTime, dotT[s][x]);
+        } else if (!wasActive[s] && isActive[s]) {
+          //If it is changing to become active, hurry the dots to the middle of the display
+          dotTarget[s][x] = (uint8_t)round(kMatrixHeight / 2);
+          memcpy(curve, hurry, 5 * sizeof(float));
+                          if (s == 0 && x == 0){
+        Serial.println("Hurrying in place");
+       }
 
-    //Animation is finished the position is updated
-    if (dotT[s][x] > 250) {
-      isDotMoving[s][x] = false;
-      dotPositionY[s][x] = dotTarget[s][x];
+        }
+        isDotMoving[s][x] = true;
+      }
+
+      //Animate 
+      int8_t delta = dotTarget[s][x] - dotPositionY[s][x];
+      float deltaY = delta * animate(curve, dotT[s][x]);
+      uint8_t adjustedTime = delta * curve[4];
+      uint8_t y = round(dotPositionY[s][x] + deltaY);
+      
+      leds[s][XY(x, y)] = CRGB::Red;
+      dotT[s][x] = animateTime(adjustedTime, dotT[s][x]);
+      //Check if the animation has finished
+      if (dotT[s][x] > 253) {
+        isDotMoving[s][x] = false;
+      }
     }
   }
+  if (isActive[s]) {
+    wasActive[s] = true;
+  } else {
+    wasActive[s] = false;
+  }
 }
+//Move the eyes to the center, and make them oscillate according to the currentActivity level.
 
 void reactionAnimation(uint8_t s) {
   float curve[] = {1, 1, 1, 0, 20}; // Hard flash ease out
