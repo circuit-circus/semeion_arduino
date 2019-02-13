@@ -36,7 +36,7 @@ const bool    kMatrixSerpentineLayout = true;
 
 // GENERAL VARIABLES
 
-const uint8_t numSides = 1;
+const uint8_t numSides = 2;
 
 //Animation
 
@@ -47,12 +47,7 @@ const uint8_t climaxThreshold = 20;
 const uint8_t deactiveThreshold = 150;
 const int timeThreshold = 5000;
 const uint8_t reactionThreshold = 5;
-//const uint8_t maxActiveConfettiLeds = 80;
 const uint8_t maxActiveReactionLeds = 10;
-
-//Curves. Leaving these here for easy reference
-//float ease[] = {0, 1.5, 1.07, 0, 50}; // ease-in-out
-//float hard[] = {1, 1, 1, 0, 20}; // Hard flash ease out
 
 static uint16_t noiseX;
 static uint16_t noiseY;
@@ -87,7 +82,6 @@ boolean isReadyToReact[] = {true, true};
 boolean isReacting[] = {false, false};
 
 uint8_t buildUp[] = {0, 0};
-//uint8_t confettiHeight[2];
 uint8_t reactionHeight[] = {0, 0};
 uint8_t animationHeight[] = {20, 20};
 
@@ -137,10 +131,6 @@ void setup() {
     pinMode(dopplerPin[s], INPUT);
 
     fill_solid(leds[s], kMatrixWidth * kMatrixHeight, CRGB::Black);
-    //    for (int i = 0; i < maxActiveConfettiLeds; i++) {
-    //      activeConfettiLeds[s][i] = random8(kMatrixWidth * kMatrixHeight - 1);
-    //      activeConfettiLedsT[s][i] = random8(1, 255);
-    //    }
   }
 }
 
@@ -239,8 +229,6 @@ void determineStates() {
 void setAnimation() {
   for (int s = 0; s < numSides; s++) {
     if (!isClimaxing[s]) {
-      //buildUpAnimation(s);
-      //confettiAnimation(s);
       exploreAnimation(s);
       if (isReacting[s]) {
         reactionAnimation(s);
@@ -248,11 +236,6 @@ void setAnimation() {
     } else {
       climaxAnimation(s);
     }
-    //    if (isRollingUp[s]) {
-    //      rollUpAnimation(s, false);
-    //    } else if (isRollingDown[s]) {
-    //      rollUpAnimation(s, true);
-    //    }
   }
 }
 
@@ -315,34 +298,6 @@ void buildUpAnimation(uint8_t s) {
     }
   }
 }
-
-//void confettiAnimation(uint8_t s) {
-//  float curve[] = {0, 1.5, 1.07, 0, 100}; // ease-in-out
-//  confettiHeight[s] = animationHeight[s];
-//
-//  numActiveConfettiLeds[s] = constrain(int((confettiHeight[s] * kMatrixWidth) * 0.7), 0, maxActiveConfettiLeds);
-//
-//  for (int i = 0; i < numActiveConfettiLeds[s]; i++) {
-//    if (activeConfettiLedsT[s][i] >= 255) {
-//      activeConfettiLeds[s][i] = pick(random(kMatrixWidth), random8(kMatrixHeight - confettiHeight[s], kMatrixHeight), activeConfettiLeds[s], numActiveConfettiLeds[s], confettiHeight[s]);
-//      activeConfettiLedsT[s][i] = 0;
-//    }
-//  }
-//
-//  for (int i = 0; i < maxActiveConfettiLeds; i++) {
-//
-//    if (activeConfettiLedsT[s][i] < 254) {
-//      float y = animate(curve, activeConfettiLedsT[s][i]);
-//      leds[s][activeConfettiLeds[s][i]] = CHSV(baseHue + i - int(maxActiveConfettiLeds / 2) , 255,  y * 255);
-//
-//      //      if (currentActivity > 220) {
-//      //        activeConfettiLedsT[i] = animateTime(curve[4], activeConfettiLedsT[i], 2.0);
-//      //      } else {
-//      activeConfettiLedsT[s][i] = animateTime(curve[4], activeConfettiLedsT[s][i]);
-//      //      }
-//    }
-//  }
-//}
 
 void exploreAnimation(uint8_t s) {
   float curious[] = {0.0, 1.59, 0.03, 1.0, 20};
@@ -427,14 +382,12 @@ void reactionAnimation(uint8_t s) {
 
   boolean stillReacting = false;
 
-  //numactiveReactionLedsY[s] = constrain(int((reactionHeight[s] * kMatrixWidth) * 0.7), 0, maxActiveReactionLeds);
   numactiveReactionLedsY[s] = 4;
 
   if (isReadyToReact[s]) {
     for (int x = 0; x < kMatrixWidth; x++) {
       for (int i = 0; i < numactiveReactionLedsY[s]; i++) {
         if (activeReactionLedsT[s][x][i] >= 255) {
-          //activeReactionLedsY[s][i] = pick(random(kMatrixWidth), random8(kMatrixHeight - (animationHeight[s] / 2) - (reactionHeight[s] / 2), kMatrixHeight - (animationHeight[s] / 2) + (reactionHeight[s] / 2)), activeReactionLedsY[s], numactiveReactionLedsY[s], reactionHeight[s]);
           activeReactionLedsY[s][x][i] = XY(x, dotPositionY[s][x]);
           activeReactionLedsT[s][x][i] = 0;
         }
@@ -509,37 +462,6 @@ uint8_t animateTime(float duration, uint8_t currentTime, float speedMultiplier) 
 
 uint8_t animateTime(float duration, uint8_t currentTime) {
   return animateTime(duration, currentTime, 1.0);
-}
-
-int pick(int x_, int y_, uint8_t locationArray[], uint8_t arrayLength, uint8_t height) {
-  int x = x_;
-  int y = y_;
-  int p = XY(x, y);
-  int checkedPick;
-  boolean isTaken = false;
-
-  for (int i = 0; i < arrayLength; i++) {
-    if (locationArray[i] == p) {
-      isTaken = true;
-    }
-    if (isTaken) {
-      i = 0;
-      isTaken = false;
-
-      y--;
-      if (y < 0) {
-        y = height;
-        x--;
-        if (x < 0) {
-          x = kMatrixWidth;
-        }
-      }
-      p = XY(x, y);
-    }
-  }
-  checkedPick = p;
-
-  return checkedPick;
 }
 
 uint16_t XY( uint8_t x, uint8_t y) {
