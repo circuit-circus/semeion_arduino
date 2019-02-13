@@ -36,7 +36,7 @@ const bool    kMatrixSerpentineLayout = true;
 
 // GENERAL VARIABLES
 
-const uint8_t numSides = 2;
+const uint8_t numSides = 1;
 
 //Animation
 
@@ -44,11 +44,11 @@ int baseHue = 150;
 int baseSat = 255;
 
 const uint8_t climaxThreshold = 20;
-const uint8_t deactiveThreshold = 80;
+const uint8_t deactiveThreshold = 150;
 const int timeThreshold = 5000;
 const uint8_t reactionThreshold = 5;
-const uint8_t maxActiveConfettiLeds = 80;
-const uint8_t maxActiveReactionLeds = 50;
+//const uint8_t maxActiveConfettiLeds = 80;
+const uint8_t maxActiveReactionLeds = 10;
 
 //Curves. Leaving these here for easy reference
 //float ease[] = {0, 1.5, 1.07, 0, 50}; // ease-in-out
@@ -60,12 +60,12 @@ static uint16_t noiseZ;
 static uint16_t hueNoiseX;
 static uint16_t hueNoiseY;
 static uint16_t hueNoiseZ;
-static int noiseScale = 10;
+static int noiseScale = 5;
 static int noiseOctaves = 2;
-uint16_t noiseSpeed = 5;
+uint16_t noiseSpeed = 2;
 
 //Input
-const int numReadings = 10;
+const int numReadings = 5;
 
 SimpleTimer timer;
 
@@ -73,8 +73,8 @@ SimpleTimer timer;
 
 CRGB leds[2][NUM_LEDS];
 
-const uint8_t ledPin[] = {2, 3};
-const uint8_t dopplerPin[] = {A0, A1};
+const uint8_t ledPin[] = {3, 2};
+const uint8_t dopplerPin[] = {A1, A0};
 
 int currentActivity[2];
 int lastActivity[2];
@@ -94,8 +94,10 @@ uint8_t animationHeight[] = {20, 20};
 //uint8_t activeConfettiLeds[2][maxActiveConfettiLeds];
 //uint8_t activeConfettiLedsT[2][maxActiveConfettiLeds];
 
-uint8_t dotPositionX[2][2];
-uint8_t dotPositionY[2][2];
+uint8_t dotPositionY[2][2]; //Side, dot number
+uint8_t dotTarget[2][2];
+uint8_t dotT[2][2];
+boolean isDotMoving[2][2];
 
 uint8_t numActiveReactionLeds[] = {0, 0};
 uint8_t activeReactionLeds[2][maxActiveReactionLeds];
@@ -123,8 +125,8 @@ int highestReading[] = {100, 100};
 void setup() {
   Serial.begin(9600);
 
-  FastLED.addLeds<CHIPSET, 2, COLOR_ORDER>(leds[0], NUM_LEDS).setCorrection(TypicalSMD5050);
-  FastLED.addLeds<CHIPSET, 3, COLOR_ORDER>(leds[1], NUM_LEDS).setCorrection(TypicalSMD5050);
+  FastLED.addLeds<CHIPSET, 3, COLOR_ORDER>(leds[0], NUM_LEDS).setCorrection(TypicalSMD5050);
+  FastLED.addLeds<CHIPSET, 2, COLOR_ORDER>(leds[1], NUM_LEDS).setCorrection(TypicalSMD5050);
 
   FastLED.setBrightness( BRIGHTNESS );
 
@@ -149,16 +151,20 @@ void loop() {
 
   //  Serial.print("H ");
   //  Serial.print(confettiHeight);
-//    Serial.print("DOWN ");
-//    Serial.print(isRollingDown[0]);
-//    Serial.print(" UP ");
-//    Serial.print(isRollingUp[0]);
-//    Serial.print(", A ");
-//    Serial.print(currentActivity[0]);
-//  //  Serial.print(", RH ");
-//  //  Serial.print(reactionHeight);
-   // Serial.print(", AH ");
-    //Serial.println(animationHeight[0]);
+  //    Serial.print("DOWN ");
+  //    Serial.print(isRollingDown[0]);
+  //    Serial.print(" UP ");
+  //    Serial.print(isRollingUp[0]);
+  //    Serial.print(", A ");
+  //    Serial.print(currentActivity[0]);
+  //  //  Serial.print(", RH ");
+  //  //  Serial.print(reactionHeight);
+  //    Serial.print(", Y ");
+  //    Serial.print(dotPositionY[0][0]);
+  //    Serial.print(", T ");
+  //    Serial.print(dotTarget[0][0]);
+  //    Serial.print(", AH ");
+  //    Serial.println(animationHeight[0]);
   //  Serial.print(", R ");
   //  Serial.print(isReacting);
   //  Serial.print(", RTR ");
@@ -336,14 +342,41 @@ void buildUpAnimation(uint8_t s) {
 //}
 
 void exploreAnimation(uint8_t s) {
-  //Make explorative animation
+  float curve[] = {0.0, 1.59, 0.03, 1.0, 20};
 
-  fill_2dnoise8 (leds[s], kMatrixWidth, animationHeight[s], true, noiseOctaves, noiseX, noiseScale, noiseY, noiseScale, noiseZ, noiseOctaves, hueNoiseX, noiseScale, hueNoiseY, noiseScale, hueNoiseZ, true);
+  //Make explorative animation
+  fill_solid(leds[s], kMatrixHeight * kMatrixWidth, CRGB::Black);
+  fill_2dnoise8 (leds[s], kMatrixWidth, kMatrixHeight, true, noiseOctaves, noiseX, noiseScale, noiseY, noiseScale, noiseZ, noiseOctaves, hueNoiseX, noiseScale, hueNoiseY, noiseScale, hueNoiseZ, true);
+//  for (int y = kMatrixHeight - animationHeight[s]; y >= 0; y--) {
+//    for (int x = 0; x < kMatrixWidth; x++) {
+//      leds[s][XY(x, y)] = CRGB::Black;
+//    }
+//  }
+
+  //fill_solid(leds[s], animationHeight[s] * kMatrixWidth, CRGB::Green);
   noiseZ += noiseSpeed;
-  hueNoiseZ += noiseSpeed / 2;
+  hueNoiseZ += noiseSpeed;
 
   //Then draw the two "eyes" and animate them
+  for (int x = 0; x < 2; x++) {
+    if (!isDotMoving[s][x]) {
+      dotT[s][x] = 0;
+      dotTarget[s][x] = random8(kMatrixHeight - animationHeight[s], kMatrixHeight);
+      isDotMoving[s][x] = true;
+    }
 
+    uint8_t delta = dotTarget[s][x] - dotPositionY[s][x];
+    float deltaY = delta * animate(curve, dotT[s][x]);
+    uint8_t adjustedTime = delta * curve[4];
+    leds[s][XY(x, round(dotPositionY[s][x] + deltaY))] = CRGB::Red;
+    dotT[s][x] = animateTime(adjustedTime, dotT[s][x]);
+
+    //Animation is finished the position is updated
+    if (dotT[s][x] > 250) {
+      isDotMoving[s][x] = false;
+      dotPositionY[s][x] = dotTarget[s][x];
+    }
+  }
 }
 
 void reactionAnimation(uint8_t s) {
