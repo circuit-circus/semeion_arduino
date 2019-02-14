@@ -47,7 +47,7 @@ const uint8_t climaxThreshold = 20;
 const uint8_t deactiveThreshold = 150;
 const int timeThreshold = 1000;
 const uint8_t reactionThreshold = 2;
-const uint8_t maxActiveReactionLeds = 10;
+const uint8_t numActiveReactionLeds = 2;
 
 #define MAX_DIMENSION ((kMatrixWidth>kMatrixHeight) ? kMatrixWidth : kMatrixHeight)
 static uint16_t noiseX;
@@ -99,9 +99,9 @@ boolean isDotMoving[2][2];
 boolean isHurrying[2][2];
 boolean isRelaxing[2][2];
 
-uint8_t numActiveReactionLedsY[] = {0, 0};
-uint8_t activeReactionLedsY[2][2][maxActiveReactionLeds];
-uint8_t activeReactionLedsT[2][2][maxActiveReactionLeds];
+//uint8_t numActiveReactionLedsY[] = {2, 0};
+uint8_t activeReactionLedsY[2][2][numActiveReactionLeds];
+uint8_t activeReactionLedsT[2][2][numActiveReactionLeds];
 
 uint8_t rollUpT[] = {0, 0};
 boolean isRollingUp[] = {false, false};
@@ -157,8 +157,8 @@ void loop() {
   //  Serial.print(deactiveThreshold);
   //  //  //  Serial.print(", RH ");
   //  //  //  Serial.print(reactionHeight);
-  Serial.print(", Y ");
-  Serial.print(dotPositionY[0][0]);
+//  Serial.print(", Y ");
+//  Serial.print(dotPositionY[0][0]);
   //          Serial.print(", T ");
   //          Serial.println(dotTarget[0][0]);
   //    Serial.print(", AH ");
@@ -171,10 +171,10 @@ void loop() {
   //  Serial.print(isActive[0]);
   //  Serial.print(", WA ");
   //  Serial.print(wasActive[0]);
-  Serial.print(", DM ");
-  Serial.print(isDotMoving[0][0]);
-  Serial.print(", H ");
-  Serial.println(isHurrying[0][0]);
+//  Serial.print(", DM ");
+//  Serial.print(isDotMoving[0][0]);
+//  Serial.print(", H ");
+//  Serial.println(isHurrying[0][0]);
   //  Serial.print(", BU ");
   //  Serial.println(buildUp[0]);
   //  Serial.print(", HR ");
@@ -383,14 +383,13 @@ void reactionAnimation(uint8_t s) {
 
   boolean stillReacting = false;
 
-  numActiveReactionLedsY[s] = 4;
-
   if (isReadyToReact[s]) {
     for (int x = 0; x < kMatrixWidth; x++) {
-      for (int i = 0; i < numActiveReactionLedsY[s]; i++) {
+      for (int i = 0; i < numActiveReactionLeds; i++) {
         if (activeReactionLedsT[s][x][i] >= 255) {
-          activeReactionLedsY[s][x][i] = XY(x, dotPositionY[s][x]);
+          activeReactionLedsY[s][x][i] = dotPositionY[s][x];
           activeReactionLedsT[s][x][i] = 0;
+
         }
       }
     }
@@ -398,27 +397,23 @@ void reactionAnimation(uint8_t s) {
 
   isReadyToReact[s] = false;
   for (int x = 0; x < kMatrixWidth; x++) {
-    for (int i = 0; i < maxActiveReactionLeds; i++) {
+    for (int i = 0; i < numActiveReactionLeds; i++) {
       if (activeReactionLedsT[s][x][i] < 254) {
         float deltaB = animate(curve, activeReactionLedsT[s][x][i]);
         float deltaP = animate(movement, activeReactionLedsT[s][x][i]);
         float y;
-        if ( i & 0x01) {
+        if ( i % 2) {
           y = activeReactionLedsY[s][x][i] + (deltaP * reactionHeight[s]);
         }
         else {
           y = activeReactionLedsY[s][x][i] - (deltaP * reactionHeight[s]);
         }
         y = round(constrain(y, 0, kMatrixHeight));
-//        if(s == 0){
-//        Serial.print(i);
-//        Serial.print(x);
-//        Serial.println(y);
-//        }
-        leds[s][XY(x, y)] = CHSV(baseHue + i - int(maxActiveReactionLeds / 2) , 0,  deltaB * 255);
+        leds[s][XY(x, y)] = CHSV(baseHue + i - int(numActiveReactionLeds / 2) , 0,  deltaB * 255);
         //leds[activeReactionLedsY[s][i]] = CHSV(0, 255,  deltaB * 255);
         activeReactionLedsT[s][x][i] = animateTime(curve[4], activeReactionLedsT[s][x][i]);
         stillReacting = true;
+
       }
     }
   }
@@ -436,7 +431,7 @@ void climaxAnimation(uint8_t s) {
 
   for (int i = 0; i < kMatrixWidth; i++) {
     for (int j = 0; j < kMatrixHeight; j++) {
-      leds[s][XY(i, j)] = CHSV(200 + i - int(maxActiveReactionLeds / 2) , 0, 255 * y);
+      leds[s][XY(i, j)] = CHSV(200 + i - int(numActiveReactionLeds / 2) , 0, 255 * y);
     }
   }
 
