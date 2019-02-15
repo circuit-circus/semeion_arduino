@@ -17,12 +17,13 @@
 // INCLUDES
 #include <FastLED.h>
 #include <SimpleTimer.h>
+#include <Wire.h>
 
 // LED
 
 // Params for width and height
-const uint8_t kMatrixWidth = 2;
-const uint8_t kMatrixHeight = 58;
+const uint8_t kMatrixWidth PROGMEM = 2;
+const uint8_t kMatrixHeight PROGMEM = 58;
 
 // Param for different pixel layouts
 const bool    kMatrixSerpentineLayout = true;
@@ -36,18 +37,18 @@ const bool    kMatrixSerpentineLayout = true;
 
 // GENERAL VARIABLES
 
-const uint8_t numSides = 2;
+const uint8_t numSides PROGMEM = 2;
 
 //Animation
 
 int baseHue = 150;
 int baseSat = 255;
 
-const uint8_t climaxThreshold = 20;
-const uint8_t deactiveThreshold = 150;
-const int timeThreshold = 1000;
-const uint8_t reactionThreshold = 2;
-const uint8_t numActiveReactionLeds = 2;
+uint8_t climaxThreshold = 1;
+uint8_t deactiveThreshold = 150;
+const int timeThreshold PROGMEM = 1000;
+uint8_t reactionThreshold = 1;
+const uint8_t numActiveReactionLeds PROGMEM = 2;
 
 #define MAX_DIMENSION ((kMatrixWidth>kMatrixHeight) ? kMatrixWidth : kMatrixHeight)
 static uint16_t noiseX;
@@ -61,7 +62,7 @@ static int noiseOctaves = 2;
 uint16_t noiseSpeed = 2;
 
 //Input
-const int numReadings = 3;
+const int numReadings PROGMEM = 3;
 
 SimpleTimer timer;
 
@@ -69,8 +70,8 @@ SimpleTimer timer;
 
 CRGB leds[2][NUM_LEDS];
 
-const uint8_t ledPin[] = {3, 2};
-const uint8_t dopplerPin[] = {A1, A0};
+const uint8_t ledPin[] PROGMEM = {3, 2};
+const uint8_t dopplerPin[] PROGMEM = {A1, A0};
 
 int currentActivity[2];
 int activityDelta[2];
@@ -79,7 +80,7 @@ long lastInteractionTime[2];
 
 boolean isActive[] = {false, false};
 boolean wasActive[] = {false, false};
-boolean isClimaxing[] = {false, false};
+volatile boolean isClimaxing[] = {false, false};
 boolean isReadyToReact[] = {true, true};
 boolean isReacting[] = {false, false};
 
@@ -122,8 +123,24 @@ int readIndex[2];
 int lowestReading[] = {520, 520};
 int highestReading[] = {100, 100};
 
+// I2C Variables
+#define SLAVE_ADDRESS 0x08
+
+uint8_t counter = 0;
+const uint8_t sendBufferSize = 4;
+const uint8_t receiveBufferSize = 9;
+uint8_t receiveBuffer[receiveBufferSize];
+uint8_t sendBuffer[sendBufferSize];
+volatile bool i2cClimax = 0;
+
 void setup() {
   Serial.begin(9600);
+
+  Wire.begin(SLAVE_ADDRESS);
+  Wire.onReceive(receiveData);
+  Wire.onRequest(sendData);
+
+  Serial.println("I2C Ready!");
 
   FastLED.addLeds<CHIPSET, 3, COLOR_ORDER>(leds[0], NUM_LEDS).setCorrection(TypicalSMD5050);
   FastLED.addLeds<CHIPSET, 2, COLOR_ORDER>(leds[1], NUM_LEDS).setCorrection(TypicalSMD5050);
@@ -151,8 +168,8 @@ void loop() {
   //    Serial.print(isRollingDown[0]);
   //    Serial.print(" UP ");
   //  //    Serial.print(isRollingUp[0]);
-  //  Serial.print(", A ");
-  //  Serial.print(currentActivity[0]);
+    // Serial.print("A ");
+    // Serial.print(currentActivity[0]);
   //  Serial.print(", DT ");
   //  Serial.print(deactiveThreshold);
   //  //  //  Serial.print(", RH ");
@@ -175,12 +192,12 @@ void loop() {
 //  Serial.print(isDotMoving[0][0]);
 //  Serial.print(", H ");
 //  Serial.println(isHurrying[0][0]);
-  //  Serial.print(", BU ");
-  //  Serial.println(buildUp[0]);
+   // Serial.print("BU ");
+   // Serial.print(buildUp[0]);
   //  Serial.print(", HR ");
   //  Serial.print(highestReading);
-  //  Serial.print(", C ");
-  //  Serial.println(isClimaxing);
+    // Serial.print(", C ");
+    // Serial.println(isClimaxing[0]);
   //  Serial.print(", AL ");
   //  Serial.println(numActiveConfettiLeds);
 }
@@ -210,6 +227,7 @@ void determineStates() {
       if (isActive[s] && isReadyToReact[s] && currentActivity[s] - lastActivity[s] > reactionThreshold) {
         isReacting[s] = true;
         buildUp[s]++;
+        // Serial.println(buildUp[s]);
         buildUp[s] = constrain(buildUp[s], 0, 255);
         reactionHeight[s] = map(currentActivity[s], reactionThreshold, 255, 0, 50);
       }
@@ -220,6 +238,7 @@ void determineStates() {
       if (buildUp[s] > climaxThreshold) {
         //Climax
         isClimaxing[s] = true;
+        i2cClimax = 1;
         lastClimaxTime[s] = millis();
         isRollingDown[s] = true;
         isActive[s] = false;
@@ -486,5 +505,60 @@ uint16_t XY( uint8_t x, uint8_t y) {
   return i;
 }
 
+/**
+ * I2C Functions
+ */
 
+// Read data in to buffer, offset in first element.
+void receiveData(int byteCount) {
+  counter = 0;
+  while(Wire.available()) {
+    receiveBuffer[counter] = Wire.read();
+    Serial.print(F("Got data: "));
+    Serial.println(receiveBuffer[counter]);
+    counter++;
+  }
+
+  if(receiveBuffer[0] == 98) {
+    isClimaxing[0] = true;
+    isClimaxing[1] = true;
+  }
+  else if(receiveBuffer[0] == 97) {
+    climaxThreshold = (uint8_t) receiveBuffer[1];
+    deactiveThreshold = (uint8_t) receiveBuffer[2];
+    reactionThreshold = (uint8_t) receiveBuffer[3];
+  }
+}
+
+// Use the offset value to select a function
+void sendData() {
+  if(receiveBuffer[0] == 99) {
+    writeData();
+  }
+  // else {
+    // Serial.println(F("No function for this address"));
+  // }
+}
+
+// Write data
+void writeData() {
+  sendBuffer[0] = i2cClimax;
+
+  sendBuffer[1] = climaxThreshold;
+  sendBuffer[2] = deactiveThreshold;
+  sendBuffer[3] = reactionThreshold;
+
+  Wire.write(sendBuffer, sendBufferSize);
+
+  if(!isClimaxing[0] && !isClimaxing[1]) {
+    i2cClimax = 0;
+  }
+
+  Serial.print(climaxThreshold);
+  Serial.print(", ");
+  Serial.print(deactiveThreshold);
+  Serial.print(", ");
+  Serial.print(reactionThreshold);
+  Serial.println(".");
+}
 
