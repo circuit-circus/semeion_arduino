@@ -22,8 +22,8 @@
 // LED
 
 // Params for width and height
-const uint8_t kMatrixWidth PROGMEM = 2;
-const uint8_t kMatrixHeight PROGMEM = 58;
+const uint8_t kMatrixWidth = 2;
+const uint8_t kMatrixHeight = 58;
 
 // Param for different pixel layouts
 const bool    kMatrixSerpentineLayout = true;
@@ -37,7 +37,7 @@ const bool    kMatrixSerpentineLayout = true;
 
 // GENERAL VARIABLES
 
-const uint8_t numSides PROGMEM = 2;
+const uint8_t numSides = 2;
 
 //Animation
 
@@ -46,9 +46,9 @@ int baseSat = 255;
 
 volatile uint8_t climaxThreshold = 1;
 volatile uint8_t deactiveThreshold = 150;
-const int timeThreshold PROGMEM = 1000;
+const int timeThreshold = 1000;
 volatile uint8_t reactionThreshold = 1;
-const uint8_t numActiveReactionLeds PROGMEM = 2;
+const uint8_t numActiveReactionLeds = 2;
 
 #define MAX_DIMENSION ((kMatrixWidth>kMatrixHeight) ? kMatrixWidth : kMatrixHeight)
 static uint16_t noiseX;
@@ -62,7 +62,7 @@ static int noiseOctaves = 2;
 uint16_t noiseSpeed = 2;
 
 //Input
-const int numReadings PROGMEM = 3;
+const int numReadings = 3;
 
 SimpleTimer timer;
 
@@ -70,8 +70,8 @@ SimpleTimer timer;
 
 CRGB leds[2][NUM_LEDS];
 
-const uint8_t ledPin[] PROGMEM = {3, 2};
-const uint8_t dopplerPin[] PROGMEM = {A1, A0};
+const uint8_t ledPin[] = {3, 2};
+const uint8_t dopplerPin[] = {A1, A0};
 
 int currentActivity[2];
 int activityDelta[2];
@@ -80,6 +80,7 @@ long lastInteractionTime[2];
 
 unsigned long startInteractionTime = 0;
 unsigned long totalInteractionTime = 0;
+volatile uint8_t mappedInteractionTime = 0;
 
 boolean isActive[] = {false, false};
 boolean wasActive[] = {false, false};
@@ -142,8 +143,6 @@ void setup() {
   Wire.begin(SLAVE_ADDRESS);
   Wire.onReceive(receiveData);
   Wire.onRequest(sendData);
-
-  Serial.println("I2C Ready!");
 
   FastLED.addLeds<CHIPSET, 3, COLOR_ORDER>(leds[0], NUM_LEDS).setCorrection(TypicalSMD5050);
   FastLED.addLeds<CHIPSET, 2, COLOR_ORDER>(leds[1], NUM_LEDS).setCorrection(TypicalSMD5050);
@@ -519,8 +518,8 @@ void receiveData(int byteCount) {
   counter = 0;
   while(Wire.available()) {
     receiveBuffer[counter] = Wire.read();
-    Serial.print(F("Got data: "));
-    Serial.println(receiveBuffer[counter]);
+    // Serial.print(F("Got data: "));
+    // Serial.println(receiveBuffer[counter]);
     counter++;
   }
 
@@ -559,7 +558,6 @@ void writeData() {
   }
 }
 
-volatile uint8_t mappedInteractionTime = 0;
 void sendSettings() {
   // Divide by two because we have two sides
   totalInteractionTime /= 2;
@@ -572,8 +570,6 @@ void sendSettings() {
   sendBuffer[4] = mappedInteractionTime;
 
   Wire.write(sendBuffer, sendBufferSize);
-
-  Serial.println("Told the PI about stuff.");
 
   totalInteractionTime = 0;
 }
