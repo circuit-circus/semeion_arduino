@@ -44,10 +44,10 @@ const uint8_t numSides PROGMEM = 2;
 int baseHue = 150;
 int baseSat = 255;
 
-uint8_t climaxThreshold = 1;
-uint8_t deactiveThreshold = 150;
+volatile uint8_t climaxThreshold = 1;
+volatile uint8_t deactiveThreshold = 150;
 const int timeThreshold PROGMEM = 1000;
-uint8_t reactionThreshold = 1;
+volatile uint8_t reactionThreshold = 1;
 const uint8_t numActiveReactionLeds PROGMEM = 2;
 
 #define MAX_DIMENSION ((kMatrixWidth>kMatrixHeight) ? kMatrixWidth : kMatrixHeight)
@@ -77,6 +77,9 @@ int currentActivity[2];
 int activityDelta[2];
 int lastActivity[2];
 long lastInteractionTime[2];
+
+unsigned long startInteractionTime = 0;
+unsigned long totalInteractionTime = 0;
 
 boolean isActive[] = {false, false};
 boolean wasActive[] = {false, false};
@@ -127,7 +130,7 @@ int highestReading[] = {100, 100};
 #define SLAVE_ADDRESS 0x08
 
 uint8_t counter = 0;
-const uint8_t sendBufferSize = 4;
+const uint8_t sendBufferSize = 5;
 const uint8_t receiveBufferSize = 9;
 uint8_t receiveBuffer[receiveBufferSize];
 uint8_t sendBuffer[sendBufferSize];
@@ -217,6 +220,7 @@ void determineStates() {
         lastInteractionTime[s] = millis();
       } else if (currentActivity[s] < deactiveThreshold && millis() - lastInteractionTime[s]  > timeThreshold) {
         //Become idle
+        totalInteractionTime += millis() - startInteractionTime;
         if (isActive[s]) {
           isRollingDown[s] = true;
         }
@@ -322,6 +326,7 @@ void exploreAnimation(uint8_t s) {
     if (!wasActive[s] && isActive[s]) {
       //If it is changing to become active, hurry the dots to the middle of the display
       isHurrying[s][x] = true;
+      startInteractionTime = millis();
     } else if (wasActive[s] && !isActive[s]) {
       //isRelaxing[s][x] = true;
     }
@@ -523,10 +528,12 @@ void receiveData(int byteCount) {
     isClimaxing[0] = true;
     isClimaxing[1] = true;
   }
-  else if(receiveBuffer[0] == 97) {
-    climaxThreshold = (uint8_t) receiveBuffer[1];
-    deactiveThreshold = (uint8_t) receiveBuffer[2];
-    reactionThreshold = (uint8_t) receiveBuffer[3];
+  // A faulty connection would send 255 
+  // so we're also sending 120 to make sure that the connection is solid
+  else if(receiveBuffer[0] == 97 && receiveBuffer[1] == 120) {
+    climaxThreshold = (uint8_t) receiveBuffer[2];
+    deactiveThreshold = (uint8_t) receiveBuffer[3];
+    reactionThreshold = (uint8_t) receiveBuffer[4];
   }
 }
 
@@ -535,30 +542,38 @@ void sendData() {
   if(receiveBuffer[0] == 99) {
     writeData();
   }
-  // else {
-    // Serial.println(F("No function for this address"));
-  // }
+  else if(receiveBuffer[0] == 98) {
+    sendSettings();
+  }
 }
 
 // Write data
 void writeData() {
-  sendBuffer[0] = i2cClimax;
-
-  sendBuffer[1] = climaxThreshold;
-  sendBuffer[2] = deactiveThreshold;
-  sendBuffer[3] = reactionThreshold;
+  sendBuffer[0] = 120;
+  sendBuffer[1] = i2cClimax;
 
   Wire.write(sendBuffer, sendBufferSize);
 
   if(!isClimaxing[0] && !isClimaxing[1]) {
     i2cClimax = 0;
   }
-
-  Serial.print(climaxThreshold);
-  Serial.print(", ");
-  Serial.print(deactiveThreshold);
-  Serial.print(", ");
-  Serial.print(reactionThreshold);
-  Serial.println(".");
 }
 
+volatile uint8_t mappedInteractionTime = 0;
+void sendSettings() {
+  // Divide by two because we have two sides
+  totalInteractionTime /= 2;
+  mappedInteractionTime = (uint8_t) map(totalInteractionTime, 0, 60000, 0, 255);
+
+  sendBuffer[0] = 120;
+  sendBuffer[1] = climaxThreshold;
+  sendBuffer[2] = deactiveThreshold;
+  sendBuffer[3] = reactionThreshold;
+  sendBuffer[4] = mappedInteractionTime;
+
+  Wire.write(sendBuffer, sendBufferSize);
+
+  Serial.println("Told the PI about stuff.");
+
+  totalInteractionTime = 0;
+}
