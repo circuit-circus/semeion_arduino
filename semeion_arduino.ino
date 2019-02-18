@@ -41,13 +41,13 @@ const uint8_t numSides = 2;
 
 //Animation
 
-int baseHue = 150;
-int baseSat = 255;
+volatile uint8_t baseHue = 150;
+volatile uint8_t baseSat = 255;
 
-volatile uint8_t climaxThreshold = 1;
-volatile uint8_t deactiveThreshold = 150;
+uint8_t climaxThreshold = 10;
+uint8_t deactiveThreshold = 150;
 const int timeThreshold = 1000;
-volatile uint8_t reactionThreshold = 1;
+uint8_t reactionThreshold = 2;
 const uint8_t numActiveReactionLeds = 2;
 
 #define MAX_DIMENSION ((kMatrixWidth>kMatrixHeight) ? kMatrixWidth : kMatrixHeight)
@@ -82,11 +82,11 @@ unsigned long startInteractionTime = 0;
 unsigned long totalInteractionTime = 0;
 volatile uint8_t mappedInteractionTime = 0;
 
-boolean isActive[] = {false, false};
+volatile boolean isActive[] = {false, false};
 boolean wasActive[] = {false, false};
 volatile boolean isClimaxing[] = {false, false};
 boolean isReadyToReact[] = {true, true};
-boolean isReacting[] = {false, false};
+volatile boolean isReacting[] = {false, false};
 
 uint8_t buildUp[] = {0, 0};
 uint8_t reactionHeight[] = {0, 0};
@@ -131,7 +131,7 @@ int highestReading[] = {100, 100};
 #define SLAVE_ADDRESS 0x08
 
 uint8_t counter = 0;
-const uint8_t sendBufferSize = 5;
+const uint8_t sendBufferSize = 6;
 const uint8_t receiveBufferSize = 9;
 uint8_t receiveBuffer[receiveBufferSize];
 uint8_t sendBuffer[sendBufferSize];
@@ -144,8 +144,8 @@ void setup() {
   Wire.onReceive(receiveData);
   Wire.onRequest(sendData);
 
-  FastLED.addLeds<CHIPSET, 3, COLOR_ORDER>(leds[0], NUM_LEDS).setCorrection(TypicalSMD5050);
-  FastLED.addLeds<CHIPSET, 2, COLOR_ORDER>(leds[1], NUM_LEDS).setCorrection(TypicalSMD5050);
+  FastLED.addLeds<CHIPSET, 7, COLOR_ORDER>(leds[0], NUM_LEDS).setCorrection(TypicalSMD5050);
+  FastLED.addLeds<CHIPSET, 6, COLOR_ORDER>(leds[1], NUM_LEDS).setCorrection(TypicalSMD5050);
 
   FastLED.setBrightness( BRIGHTNESS );
 
@@ -432,7 +432,7 @@ void reactionAnimation(uint8_t s) {
           y = activeReactionLedsY[s][x][i] - (deltaP * reactionHeight[s]);
         }
         y = round(constrain(y, 0, kMatrixHeight));
-        leds[s][XY(x, y)] = CHSV(baseHue + i - int(numActiveReactionLeds / 2) , 0,  deltaB * 255);
+        leds[s][XY(x, y)] = CHSV(baseHue + i - int(numActiveReactionLeds / 2) , baseSat,  deltaB * 255);
         //leds[activeReactionLedsY[s][i]] = CHSV(0, 255,  deltaB * 255);
         activeReactionLedsT[s][x][i] = animateTime(curve[4], activeReactionLedsT[s][x][i]);
         stillReacting = true;
@@ -523,23 +523,22 @@ void receiveData(int byteCount) {
     counter++;
   }
 
-  if(receiveBuffer[0] == 98) {
+  if(receiveBuffer[0] == 96) {
     isClimaxing[0] = true;
     isClimaxing[1] = true;
   }
   // A faulty connection would send 255 
   // so we're also sending 120 to make sure that the connection is solid
-  else if(receiveBuffer[0] == 97 && receiveBuffer[1] == 120) {
-    climaxThreshold = (uint8_t) receiveBuffer[2];
-    deactiveThreshold = (uint8_t) receiveBuffer[3];
-    reactionThreshold = (uint8_t) receiveBuffer[4];
+  else if(receiveBuffer[0] == 95 && receiveBuffer[1] == 120) {
+    baseHue = (uint8_t) receiveBuffer[2];
+    baseSat = (uint8_t) receiveBuffer[3];
   }
 }
 
 // Use the offset value to select a function
 void sendData() {
   if(receiveBuffer[0] == 99) {
-    writeData();
+    writeStates();
   }
   else if(receiveBuffer[0] == 98) {
     sendSettings();
@@ -547,13 +546,28 @@ void sendData() {
 }
 
 // Write data
-void writeData() {
+void writeStates() {
   sendBuffer[0] = 120;
   sendBuffer[1] = i2cClimax;
+  sendBuffer[2] = (isActive[0] ? 1 : 0);
+  sendBuffer[3] = (isActive[1] ? 1 : 0);
+  sendBuffer[4] = (isReacting[0] ? 1 : 0);
+  sendBuffer[5] = (isReacting[1] ? 1 : 0);
+
+  Serial.print(sendBuffer[1]);
+  Serial.print(",");
+  Serial.print(sendBuffer[2]);
+  Serial.print(",");
+  Serial.print(sendBuffer[3]);
+  Serial.print(",");
+  Serial.print(sendBuffer[4]);
+  Serial.print(",");
+  Serial.print(sendBuffer[5]);
+  Serial.println(".");
 
   Wire.write(sendBuffer, sendBufferSize);
 
-  if(!isClimaxing[0] && !isClimaxing[1]) {
+  if(i2cClimax == 1) {
     i2cClimax = 0;
   }
 }
@@ -564,9 +578,9 @@ void sendSettings() {
   mappedInteractionTime = (uint8_t) map(totalInteractionTime, 0, 60000, 0, 255);
 
   sendBuffer[0] = 120;
-  sendBuffer[1] = climaxThreshold;
-  sendBuffer[2] = deactiveThreshold;
-  sendBuffer[3] = reactionThreshold;
+  sendBuffer[1] = baseHue;
+  sendBuffer[2] = baseSat;
+  sendBuffer[3] = 0;
   sendBuffer[4] = mappedInteractionTime;
 
   Wire.write(sendBuffer, sendBufferSize);
