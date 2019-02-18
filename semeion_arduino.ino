@@ -17,6 +17,7 @@
 // INCLUDES
 #include <FastLED.h>
 #include <SimpleTimer.h>
+#include <Wire.h>
 
 // LED
 
@@ -43,8 +44,8 @@ const bool    kMatrixSerpentineLayout = true;
 const uint8_t numSides = 2;
 
 //Animation
-int baseHue = 150;
-int baseSat = 255;
+volatile uint8_t baseHue = 150;
+volatile uint8_t baseSat = 255;
 
 const uint8_t climaxThreshold = 4;
 const uint8_t deactiveThreshold = 150;
@@ -98,11 +99,15 @@ int activityDelta[2];
 int lastActivity[2];
 long lastInteractionTime[2];
 
-boolean isActive[] = {false, false};
+unsigned long startInteractionTime = 0;
+unsigned long totalInteractionTime = 0;
+volatile uint8_t mappedInteractionTime = 0;
+
+volatile boolean isActive[] = {false, false};
 boolean wasActive[] = {false, false};
-boolean isClimaxing[] = {false, false};
+volatile boolean isClimaxing[] = {false, false};
 boolean isReadyToReact[] = {true, true};
-boolean isReacting[] = {false, false};
+volatile boolean isReacting[] = {false, false};
 boolean isFadingIn[] = {false, false};
 
 uint8_t buildUp[] = {0, 0};
@@ -138,11 +143,25 @@ int readIndex[2];
 int lowestReading[] = {520, 520};
 int highestReading[] = {100, 100};
 
+// I2C Variables
+#define SLAVE_ADDRESS 0x08
+
+uint8_t counter = 0;
+const uint8_t sendBufferSize = 6;
+const uint8_t receiveBufferSize = 9;
+uint8_t receiveBuffer[receiveBufferSize];
+uint8_t sendBuffer[sendBufferSize];
+volatile bool i2cClimax = 0;
+
 void setup() {
   Serial.begin(9600);
 
   FastLED.addLeds<CHIPSET, LED0, COLOR_ORDER>(leds[0], NUM_LEDS).setCorrection(TypicalSMD5050);
   FastLED.addLeds<CHIPSET, LED1, COLOR_ORDER>(leds[1], NUM_LEDS).setCorrection(TypicalSMD5050);
+
+  Wire.begin(SLAVE_ADDRESS);
+  Wire.onReceive(receiveData);
+  Wire.onRequest(sendData);
 
   FastLED.setBrightness( BRIGHTNESS );
 
@@ -168,18 +187,18 @@ void loop() {
   //    Serial.print(isRollingDown[0]);
   //    Serial.print(" UP ");
   //  //    Serial.print(isRollingUp[0]);
-  //  Serial.print(", A ");
-  //  Serial.print(currentActivity[0]);
-  //    Serial.print(", DT ");
-  //    Serial.print(deactiveThreshold);
+    // Serial.print("A ");
+    // Serial.print(currentActivity[0]);
+  //  Serial.print(", DT ");
+  //  Serial.print(deactiveThreshold);
   //  //  //  Serial.print(", RH ");
   //  //  //  Serial.print(reactionHeight);
-  Serial.print(", oY ");
-  Serial.print(dotOld[0][0] / vPixelDensity);
-  Serial.print(", cY ");
-  Serial.print(dotPositionY[0][0] / vPixelDensity);
-  Serial.print(", tY ");
-  Serial.println(dotTarget[0][0] / vPixelDensity);
+  // Serial.print(", oY ");
+  // Serial.print(dotOld[0][0] / vPixelDensity);
+  // Serial.print(", cY ");
+  // Serial.print(dotPositionY[0][0] / vPixelDensity);
+  // Serial.print(", tY ");
+  // Serial.println(dotTarget[0][0] / vPixelDensity);
 //  Serial.print(", mH");
 //  Serial.println(vMatrixHeight / vPixelDensity);
   //    Serial.print(", AH ");
@@ -190,22 +209,18 @@ void loop() {
   //    Serial.println(isReadyToReact[1]);
   //  Serial.print(", A ");
   //  Serial.print(isActive[0]);
-  //  //  Serial.print(", WA ");
-  //  //  Serial.print(wasActive[0]);
-  //  //  Serial.print(", DM ");
-  //  //  Serial.print(isDotMoving[0][0]);
-  //  Serial.print(", H ");
-  //  Serial.print(isHurrying[0][0]);
-  //  Serial.print(", R ");
-  //  Serial.println(isRelaxing[0][0]);
-  //  Serial.print(", BU ");
-  //  Serial.println(buildUp[0]);
+  //  Serial.print(", WA ");
+  //  Serial.print(wasActive[0]);
+//  Serial.print(", DM ");
+//  Serial.print(isDotMoving[0][0]);
+//  Serial.print(", H ");
+//  Serial.println(isHurrying[0][0]);
+   // Serial.print("BU ");
+   // Serial.print(buildUp[0]);
   //  Serial.print(", HR ");
   //  Serial.print(highestReading);
-  //  Serial.print(", C ");
-  //  Serial.print(isClimaxing[0]);
-  //  Serial.print(", F ");
-  //  Serial.println(isFadingIn[0]);
+    // Serial.print(", C ");
+    // Serial.println(isClimaxing[0]);
   //  Serial.print(", AL ");
   //  Serial.println(numActiveConfettiLeds);
   //  Serial.print("N1 ");
@@ -226,6 +241,7 @@ void determineStates() {
         lastInteractionTime[s] = millis();
       } else if (currentActivity[s] < deactiveThreshold && millis() - lastInteractionTime[s]  > timeThreshold) {
         //Become idle
+        totalInteractionTime += millis() - startInteractionTime;
         isActive[s] = false;
         buildUp[s] = 0;
       }
@@ -233,12 +249,14 @@ void determineStates() {
       if (isActive[s] && isReadyToReact[s] && currentActivity[s] - lastActivity[s] > reactionThreshold) {
         isReacting[s] = true;
         buildUp[s]++;
+        // Serial.println(buildUp[s]);
         buildUp[s] = constrain(buildUp[s], 0, 255);
         reactionHeight[s] = map(currentActivity[s], reactionThreshold, 255, 0, 50);
       }
       if (buildUp[s] > climaxThreshold) {
         //Climax
         isClimaxing[s] = true;
+        i2cClimax = 1;
         isActive[s] = false;
         isReacting[s] = false;
       }
@@ -309,7 +327,7 @@ void dotAnimation(uint8_t s) {
       dotOld[s][x] = dotPositionY[s][x];
       dotT[s][x] = 0;
       isRelaxing[s][x] = false;
-
+      startInteractionTime = millis();
     } else if (wasActive[s] && !isActive[s]) {
       //If it is changing to idle. Make the animation start slowly
       isRelaxing[s][x] = true;
@@ -362,7 +380,7 @@ void dotAnimation(uint8_t s) {
     }
   }
 
-  downsampleDots(s, CRGB::Magenta);
+  downsampleDots(s, CHSV(baseHue, baseSat, 255));
 
   if (isActive[s]) {
     wasActive[s] = true;
@@ -435,7 +453,7 @@ void reactionAnimation(uint8_t s) {
           y = activeReactionLedsY[s][x][i] - (deltaP * reactionHeight[s]);
         }
         y = round(constrain(y, 0, kMatrixHeight));
-        leds[s][XY(x, y)] = CHSV(baseHue + i - int(numActiveReactionLeds / 2) , 0,  deltaB * 255);
+        leds[s][XY(x, y)] = CHSV(0, 0, deltaB * 255);
         //leds[activeReactionLedsY[s][i]] = CHSV(0, 255,  deltaB * 255);
         activeReactionLedsT[s][x][i] = animateTime(curve[4], activeReactionLedsT[s][x][i]);
         stillReacting = true;
@@ -661,5 +679,70 @@ void downsampleDots(uint8_t s, CRGB c) {
   }
 }
 
+/**
+ * I2C Functions
+ */
 
+// Read data in to buffer, offset in first element.
+void receiveData(int byteCount) {
+  counter = 0;
+  while(Wire.available()) {
+    receiveBuffer[counter] = Wire.read();
+    // Serial.print(F("Got data: "));
+    // Serial.println(receiveBuffer[counter]);
+    counter++;
+  }
 
+  if(receiveBuffer[0] == 96) {
+    isClimaxing[0] = true;
+    isClimaxing[1] = true;
+  }
+  // A faulty connection would send 255 
+  // so we're also sending 120 to make sure that the connection is solid
+  else if(receiveBuffer[0] == 95 && receiveBuffer[1] == 120) {
+    baseHue = (uint8_t) receiveBuffer[2];
+    baseSat = (uint8_t) receiveBuffer[3];
+  }
+}
+
+// Use the offset value to select a function
+void sendData() {
+  if(receiveBuffer[0] == 99) {
+    writeStates();
+  }
+  else if(receiveBuffer[0] == 98) {
+    sendSettings();
+  }
+}
+
+// Write data
+void writeStates() {
+  sendBuffer[0] = 120;
+  sendBuffer[1] = i2cClimax;
+  sendBuffer[2] = (isActive[0] ? 1 : 0);
+  sendBuffer[3] = (isActive[1] ? 1 : 0);
+  sendBuffer[4] = (isReacting[0] ? 1 : 0);
+  sendBuffer[5] = (isReacting[1] ? 1 : 0);
+
+  Wire.write(sendBuffer, sendBufferSize);
+
+  if(i2cClimax == 1) {
+    i2cClimax = 0;
+  }
+}
+
+void sendSettings() {
+  // Divide by two because we have two sides
+  totalInteractionTime /= 2;
+  mappedInteractionTime = (uint8_t) map(totalInteractionTime, 0, 60000, 0, 255);
+
+  sendBuffer[0] = 120;
+  sendBuffer[1] = baseHue;
+  sendBuffer[2] = baseSat;
+  sendBuffer[3] = 0;
+  sendBuffer[4] = mappedInteractionTime;
+
+  Wire.write(sendBuffer, sendBufferSize);
+
+  totalInteractionTime = 0;
+}
