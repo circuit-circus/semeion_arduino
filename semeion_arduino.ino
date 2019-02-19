@@ -23,11 +23,11 @@
 
 // Params for width and height
 const uint8_t kMatrixWidth = 2;
-const uint8_t kMatrixHeight = 55;
+const uint8_t kMatrixHeight = 56;
 
 const uint8_t vPixelDensity = 16;
 const uint16_t vMatrixHeight = kMatrixHeight * vPixelDensity;
-const uint8_t noiseHeight = (kMatrixHeight / 2);
+const uint8_t noiseHeight = kMatrixHeight / 2;
 
 // Param for different pixel layouts
 const bool    kMatrixSerpentineLayout = true;
@@ -47,7 +47,7 @@ const uint8_t numSides = 2;
 volatile uint8_t baseHue = 150;
 volatile uint8_t baseSat = 255;
 
-const uint8_t climaxThreshold = 4;
+const uint8_t climaxThreshold = 25;
 const uint8_t deactiveThreshold = 150;
 const int timeThreshold = 100;
 const uint8_t reactionThreshold = 5;
@@ -58,22 +58,30 @@ static uint16_t noiseY;
 static uint16_t noiseZ;
 static int noiseScale = 200;
 static int noiseOctaves = 2;
-uint16_t noiseSpeed = 0.2;
 uint8_t noise[2][kMatrixWidth][noiseHeight];
-boolean colorLoop = true;
+//boolean colorLoop = false;
+uint8_t paletteRatio = 3;
 
-//DEFINE_GRADIENT_PALETTE(NoisePalette_p) {
+//DEFINE_GRADIENT_PALETTE(NoisePalette_p) { //Bølgen
 //  0, 255, 149, 2,
 //  80, 252, 47, 214,
 //  170, 81, 50, 255,
 //  255, 255, 149, 2
 //};
 
-DEFINE_GRADIENT_PALETTE(NoisePalette_p) {
-  0, 48, 244, 215,
-  180, 50, 47, 239,
-  255, 48, 244, 215,
+DEFINE_GRADIENT_PALETTE(NoisePalette_p) { //Turkis, magenta, blå
+  0, 49, 247, 247,
+  80, 50, 47, 249,
+  170, 239, 45, 178,
+  255, 49, 247, 247
 };
+//
+//DEFINE_GRADIENT_PALETTE(NoisePalette_p) { //Grøn blå
+//  0, 48, 244, 215,
+//  180, 50, 47, 239,
+//  255, 48, 244, 215,
+//};
+
 CRGBPalette16 noisePalette( NoisePalette_p );
 
 //Input
@@ -89,7 +97,6 @@ CRGB leds[2][NUM_LEDS];
 #define DOPPLER1 A1
 #define LED0 6
 #define LED1 7
-
 
 const uint8_t ledPin[] = {LED0, LED1};
 const uint8_t dopplerPin[] = {DOPPLER0, DOPPLER1};
@@ -125,7 +132,7 @@ boolean isHurrying[2][2];
 boolean isRelaxing[2][2];
 uint16_t hurryStartY[2][2];
 
-uint8_t activeReactionLedsY[2][2][numActiveReactionLeds];
+uint16_t activeReactionLedsY[2][2][numActiveReactionLeds];
 uint8_t activeReactionLedsT[2][2][numActiveReactionLeds];
 
 uint8_t fadeInT[] = {0, 0};
@@ -187,20 +194,24 @@ void loop() {
   //    Serial.print(isRollingDown[0]);
   //    Serial.print(" UP ");
   //  //    Serial.print(isRollingUp[0]);
-    // Serial.print("A ");
-    // Serial.print(currentActivity[0]);
-  //  Serial.print(", DT ");
-  //  Serial.print(deactiveThreshold);
+    Serial.print("A ");
+    Serial.print(currentActivity[0]);
+  //  Serial.print("L ");
+  //  Serial.print(lastActivity[0]);
+  //  Serial.print("H ");
+  //  Serial.println(reactionHeight[0]);
+    Serial.print(", DT ");
+    Serial.println(deactiveThreshold);
   //  //  //  Serial.print(", RH ");
   //  //  //  Serial.print(reactionHeight);
-  // Serial.print(", oY ");
-  // Serial.print(dotOld[0][0] / vPixelDensity);
-  // Serial.print(", cY ");
-  // Serial.print(dotPositionY[0][0] / vPixelDensity);
-  // Serial.print(", tY ");
-  // Serial.println(dotTarget[0][0] / vPixelDensity);
-//  Serial.print(", mH");
-//  Serial.println(vMatrixHeight / vPixelDensity);
+//   Serial.print(", oY ");
+//   Serial.print(dotOld[0][0] / vPixelDensity);
+//   Serial.print(", cY ");
+//   Serial.print(dotPositionY[0][0] / vPixelDensity);
+//   Serial.print(", tY ");
+//   Serial.println(dotTarget[0][0] / vPixelDensity);
+  //  Serial.print(", mH");
+  //  Serial.println(vMatrixHeight / vPixelDensity);
   //    Serial.print(", AH ");
   //    Serial.println(animationHeight[0]);
   //    Serial.print(", R ");
@@ -211,16 +222,16 @@ void loop() {
   //  Serial.print(isActive[0]);
   //  Serial.print(", WA ");
   //  Serial.print(wasActive[0]);
-//  Serial.print(", DM ");
-//  Serial.print(isDotMoving[0][0]);
-//  Serial.print(", H ");
-//  Serial.println(isHurrying[0][0]);
-   // Serial.print("BU ");
-   // Serial.print(buildUp[0]);
+  //  Serial.print(", DM ");
+  //  Serial.print(isDotMoving[0][0]);
+  //  Serial.print(", H ");
+  //  Serial.println(isHurrying[0][0]);
+  // Serial.print("BU ");
+  // Serial.print(buildUp[0]);
   //  Serial.print(", HR ");
   //  Serial.print(highestReading);
-    // Serial.print(", C ");
-    // Serial.println(isClimaxing[0]);
+  // Serial.print(", C ");
+  // Serial.println(isClimaxing[0]);
   //  Serial.print(", AL ");
   //  Serial.println(numActiveConfettiLeds);
   //  Serial.print("N1 ");
@@ -243,7 +254,8 @@ void determineStates() {
         //Become idle
         totalInteractionTime += millis() - startInteractionTime;
         isActive[s] = false;
-        buildUp[s] = 0;
+        buildUp[s] = constrain(buildUp[s] - 1, 0, climaxThreshold);
+        //buildUp[s] = constrain(buildUp[s], 0, climaxThreshold);
       }
 
       if (isActive[s] && isReadyToReact[s] && currentActivity[s] - lastActivity[s] > reactionThreshold) {
@@ -251,9 +263,10 @@ void determineStates() {
         buildUp[s]++;
         // Serial.println(buildUp[s]);
         buildUp[s] = constrain(buildUp[s], 0, 255);
-        reactionHeight[s] = map(currentActivity[s], reactionThreshold, 255, 0, 50);
+        uint8_t heightRaw = map(currentActivity[s], lastActivity[s], 255, 160, vMatrixHeight / 2);
+        reactionHeight[s] = constrain(heightRaw, 0, vMatrixHeight / 2);
       }
-      if (buildUp[s] > climaxThreshold) {
+      if (buildUp[s] >= climaxThreshold) {
         //Climax
         isClimaxing[s] = true;
         i2cClimax = 1;
@@ -311,7 +324,6 @@ void readCalculate() {
 }
 
 void noiseAnimation(uint8_t s) {
-  //  fill_solid(leds[s], kMatrixWidth * kMatrixHeight, CRGB::Black);
   fillnoise8(s);
   mapNoiseToLEDsUsingPalette(s);
 }
@@ -338,7 +350,8 @@ void dotAnimation(uint8_t s) {
 
     if (isActive[s]) { //Oscillate
       //If Semeion is active and is not changing. Make the two dots oscillate with the currentActivity level´
-      uint16_t y = vMatrixHeight / 2 + ((sin8(dotT[s][x]) / 255.0 - 0.5) * (max(0, currentActivity[s] - deactiveThreshold) * (vPixelDensity / 5)));
+      float shift = (float)(climaxThreshold - buildUp[s]) / climaxThreshold;
+      uint16_t y = vMatrixHeight / 2 + ((sin8(dotT[s][x] + (x * (127 * shift))) / 255.0 - 0.5) * (max(0, currentActivity[s] - deactiveThreshold) * (vPixelDensity / 5)));
 
       if (isHurrying[s][x]) {
         dotPositionY[s][x] = hurryAnimation(s, x, y);
@@ -346,7 +359,7 @@ void dotAnimation(uint8_t s) {
         dotPositionY[s][x] = y;
         dotOld[s][x] = dotPositionY[s][x];
       }
-      dotT[s][x] = animateTime(40 + x * 10, dotT[s][x]);
+      dotT[s][x] = animateTime(40, dotT[s][x]);
       isDotMoving[s][x] = true;
 
     } else { //Explore
@@ -378,9 +391,10 @@ void dotAnimation(uint8_t s) {
       isDotMoving[s][x] = false;
       dotT[s][x] = 0;
     }
+      CRGB color = ColorFromPalette(noisePalette, baseHue + 127, 255);
+      downsampleDots(s, x, dotPositionY[s][x], color);
   }
 
-  downsampleDots(s, CHSV(baseHue, baseSat, 255));
 
   if (isActive[s]) {
     wasActive[s] = true;
@@ -432,7 +446,7 @@ void reactionAnimation(uint8_t s) {
     for (int x = 0; x < kMatrixWidth; x++) {
       for (int i = 0; i < numActiveReactionLeds; i++) {
         if (activeReactionLedsT[s][x][i] >= 255) {
-          activeReactionLedsY[s][x][i] = dotPositionY[s][x] / vPixelDensity;
+          activeReactionLedsY[s][x][i] = dotPositionY[s][x];
           activeReactionLedsT[s][x][i] = 0;
         }
       }
@@ -452,8 +466,11 @@ void reactionAnimation(uint8_t s) {
         else {
           y = activeReactionLedsY[s][x][i] - (deltaP * reactionHeight[s]);
         }
-        y = round(constrain(y, 0, kMatrixHeight));
-        leds[s][XY(x, y)] = CHSV(0, 0, deltaB * 255);
+        y = round(constrain(y, 0, vMatrixHeight));
+        uint8_t bri = (uint8_t) map(reactionHeight[s], 0, 35, 150, 255);
+        //leds[s][XY(x, y)] += CHSV(0, 0, deltaB * bri);
+        CRGB c = CHSV(0, 0, deltaB * bri);
+        downsampleDots(s, x, y, c); 
         //leds[activeReactionLedsY[s][i]] = CHSV(0, 255,  deltaB * 255);
         activeReactionLedsT[s][x][i] = animateTime(curve[4], activeReactionLedsT[s][x][i]);
         stillReacting = true;
@@ -466,6 +483,9 @@ void reactionAnimation(uint8_t s) {
     isReacting[s] = false;
   } else if (!stillReacting && currentActivity[s] > 240) {
     isReadyToReact[s] = true;
+    buildUp[s]++;
+    uint8_t heightRaw = map(currentActivity[s], 240, 255, 160, vMatrixHeight / 2);
+    reactionHeight[s] = constrain(heightRaw, 0, vMatrixHeight / 2);
   }
 }
 
@@ -476,7 +496,8 @@ void climaxAnimation(uint8_t s) {
 
   for (int i = 0; i < kMatrixWidth; i++) {
     for (int j = 0; j < kMatrixHeight; j++) {
-      leds[s][XY(i, j)] = CHSV(200 + i - int(numActiveReactionLeds / 2) , 255, 255 * y);
+      //leds[s][XY(i, j)] = CHSV(baseHue, 150, 255 * y);
+      leds[s][XY(i, j)] = ColorFromPalette( noisePalette, baseHue + 127, 255*y);
     }
   }
 
@@ -579,6 +600,7 @@ void fillnoise8(uint8_t s) {
   // from frame-to-frame.  In order to reduce this, we can do some fast data-smoothing.
   // The amount of data smoothing we're doing depends on "speed".
   uint8_t dataSmoothing = 0;
+  uint8_t noiseSpeed = (buildUp[s] + 10) / 5;
   if ( noiseSpeed < 50) {
     dataSmoothing = 200 - (noiseSpeed * 4);
   }
@@ -606,15 +628,18 @@ void fillnoise8(uint8_t s) {
     }
   }
 
+
+
   noiseZ += noiseSpeed;
 
   // apply slow drift to X and Y, just for visual variation.
-  noiseX += noiseSpeed / 8;
-  noiseY -= noiseSpeed / 16;
+  //  noiseX += noiseSpeed[s] / 8;
+  //  noiseY -= noiseSpeed[s] / 16;
 }
 
 void mapNoiseToLEDsUsingPalette(uint8_t s) {
-  static uint8_t ihue = 0;
+  //static uint8_t ihue = 0;
+  uint8_t dimFactor = 10;
 
   for (int x = 0; x < kMatrixWidth; x++) {
     for (int y = 0; y < noiseHeight; y++) {
@@ -622,38 +647,57 @@ void mapNoiseToLEDsUsingPalette(uint8_t s) {
       // array for our brightness, and the flipped value from (j,i)
       // for our pixel's index into the color palette.
 
-      uint8_t index = noise[s][kMatrixWidth - x][noiseHeight - y];
-      uint8_t bri =   round(noise[s][x][y] / 15);
+      uint8_t index = map(noise[s][kMatrixWidth - x][noiseHeight - y], 0, 255, baseHue - (255 / paletteRatio), baseHue + (255 / paletteRatio));
+      uint8_t bri =   round(noise[s][x][y] / dimFactor);
 
       // if this palette is a 'loop', add a slowly-changing base value
-      if ( colorLoop) {
-        index += ihue;
-      }
+      //      if ( colorLoop) {
+      //        index += ihue;
+      //      }
 
       // brighten up, as the color palette itself often contains the
       // light/dark dynamic range desired
-      //      if ( bri > 127 ) {
-      //        bri = 255;
-      //      } else {
-      //        bri = dim8_raw( bri * 2);
-      //      }
+      //            if ( bri > 127 ) {
+      //              bri = 255;
+      //            } else {
+      //              bri = dim8_raw( bri * 2);
+      //            }
 
       uint8_t scale = kMatrixHeight / noiseHeight;
 
       CRGB color = ColorFromPalette( noisePalette, index, bri);
+
+      uint8_t glitterLimit = (255 / dimFactor);
+      if ( bri > glitterLimit - buildUp[s]) {
+        float factor = (float) (bri - (glitterLimit - buildUp[s])) / glitterLimit; 
+        uint8_t highest; 
+        
+        highest = color.r ;
+        if ( color.g > highest) {
+          highest = color.g;  
+        }
+        if (color.b > highest) {
+          highest = color.b;  
+        }
+
+        color += CRGB(highest - color.r * factor , highest - color.g * factor, highest - color.b * factor); 
+      } 
+
+      
+      //color += CRGB(buildUp[s], buildUp[s], buildUp[s]);
+
       for (int i = 0; i < scale; i++) {
         leds[s][XY(x, constrain(y * scale + i, 0, kMatrixHeight))] = color;
       }
     }
   }
 
-  ihue += 1;
+  //  ihue += 1;
 }
 
-void downsampleDots(uint8_t s, CRGB c) {
+void downsampleDots(uint8_t s, uint8_t x, uint16_t y, CRGB c) {
 
-  for (int x = 0; x < kMatrixWidth; x++) {
-    float pos = (float) dotPositionY[s][x] / vPixelDensity ;
+    float pos = (float) y / vPixelDensity ;
 
     float delta = fmod(pos, 1);
 
@@ -665,41 +709,31 @@ void downsampleDots(uint8_t s, CRGB c) {
     uint8_t g_f = round(c.g * (1.0f - delta));
     uint8_t b_f = round(c.b * (1.0f - delta));
 
-    //    if (s == 0 && x == 0) {
-    //      Serial.print(" b_c ");
-    //      Serial.print(b_c);
-    //      Serial.print(" b_f ");
-    //      Serial.print(b_f);
-    //      Serial.print(" d ");
-    //      Serial.println(delta);
-    //    }
-
-    leds[s][XY(x, ceil(pos))] = CRGB(r_c, g_c, b_c);
-    leds[s][XY(x, floor(pos))] = CRGB(r_f, g_f, b_f);
-  }
+    leds[s][XY(x, ceil(pos))] += CRGB(r_c, g_c, b_c);
+    leds[s][XY(x, floor(pos))] += CRGB(r_f, g_f, b_f);
 }
 
 /**
- * I2C Functions
- */
+   I2C Functions
+*/
 
 // Read data in to buffer, offset in first element.
 void receiveData(int byteCount) {
   counter = 0;
-  while(Wire.available()) {
+  while (Wire.available()) {
     receiveBuffer[counter] = Wire.read();
     // Serial.print(F("Got data: "));
     // Serial.println(receiveBuffer[counter]);
     counter++;
   }
 
-  if(receiveBuffer[0] == 96) {
+  if (receiveBuffer[0] == 96) {
     isClimaxing[0] = true;
     isClimaxing[1] = true;
   }
-  // A faulty connection would send 255 
+  // A faulty connection would send 255
   // so we're also sending 120 to make sure that the connection is solid
-  else if(receiveBuffer[0] == 95 && receiveBuffer[1] == 120) {
+  else if (receiveBuffer[0] == 95 && receiveBuffer[1] == 120) {
     baseHue = (uint8_t) receiveBuffer[2];
     baseSat = (uint8_t) receiveBuffer[3];
   }
@@ -707,10 +741,10 @@ void receiveData(int byteCount) {
 
 // Use the offset value to select a function
 void sendData() {
-  if(receiveBuffer[0] == 99) {
+  if (receiveBuffer[0] == 99) {
     writeStates();
   }
-  else if(receiveBuffer[0] == 98) {
+  else if (receiveBuffer[0] == 98) {
     sendSettings();
   }
 }
@@ -726,7 +760,7 @@ void writeStates() {
 
   Wire.write(sendBuffer, sendBufferSize);
 
-  if(i2cClimax == 1) {
+  if (i2cClimax == 1) {
     i2cClimax = 0;
   }
 }
