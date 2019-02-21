@@ -48,18 +48,17 @@ volatile uint8_t baseHue = 150;
 volatile uint8_t baseSat = 255;
 
 const uint8_t climaxThreshold = 25;
-const uint8_t deactiveThreshold = 150;
+uint8_t deactiveThreshold[2];
 const int timeThreshold = 100;
-const uint8_t reactionThreshold = 5;
-const uint8_t numActiveReactionLeds = 2;
+const uint8_t reactionThreshold = 2;
+const uint8_t numConcurrentReactions = 2;
 
 static uint16_t noiseX;
 static uint16_t noiseY;
 static uint16_t noiseZ;
-static int noiseScale = 200;
-static int noiseOctaves = 2;
+//static int noiseScale = 200;
+static int noiseScale = 1000;
 uint8_t noise[2][kMatrixWidth][noiseHeight];
-//boolean colorLoop = false;
 uint8_t paletteRatio = 3;
 
 //DEFINE_GRADIENT_PALETTE(NoisePalette_p) { //Bølgen
@@ -113,12 +112,12 @@ volatile uint8_t mappedInteractionTime = 0;
 volatile boolean isActive[] = {false, false};
 boolean wasActive[] = {false, false};
 volatile boolean isClimaxing[] = {false, false};
-boolean isReadyToReact[] = {true, true};
-volatile boolean isReacting[] = {false, false};
+boolean isReadyToReact[][numConcurrentReactions] = {{true, true}, {true, true}};
+volatile boolean isReacting[][numConcurrentReactions] = {{false, false}, {false, false}};
 boolean isFadingIn[] = {false, false};
 
 uint8_t buildUp[] = {0, 0};
-uint8_t reactionHeight[] = {0, 0};
+uint8_t reactionHeight[2][2];
 uint8_t animationHeight[] = {20, 20};
 
 uint16_t dotPositionY[2][2]; //Side, dot number
@@ -131,9 +130,10 @@ boolean isDotMoving[2][2];
 boolean isHurrying[2][2];
 boolean isRelaxing[2][2];
 uint16_t hurryStartY[2][2];
+boolean reactionLocked[] = {false, false};
 
-uint16_t activeReactionLedsY[2][2][numActiveReactionLeds];
-uint8_t activeReactionLedsT[2][2][numActiveReactionLeds];
+uint16_t activeReactionLedsY[2][2][numConcurrentReactions * 2];
+uint8_t activeReactionLedsT[2][2][numConcurrentReactions * 2];
 
 uint8_t fadeInT[] = {0, 0};
 
@@ -194,44 +194,56 @@ void loop() {
   //    Serial.print(isRollingDown[0]);
   //    Serial.print(" UP ");
   //  //    Serial.print(isRollingUp[0]);
-    Serial.print("A ");
-    Serial.print(currentActivity[0]);
+  //Serial.print("A0 ");
+  Serial.println(currentActivity[0]);
+  //  Serial.print(", A1 ");
+  //  Serial.print(currentActivity[1]);
+  //  Serial.print(", DT ");
+  //  Serial.print(deactiveThreshold[0]);
+  //  Serial.print(", DT ");
+  //  Serial.println(deactiveThreshold[1]);
   //  Serial.print("L ");
   //  Serial.print(lastActivity[0]);
   //  Serial.print("H ");
   //  Serial.println(reactionHeight[0]);
-    Serial.print(", DT ");
-    Serial.println(deactiveThreshold);
   //  //  //  Serial.print(", RH ");
-  //  //  //  Serial.print(reactionHeight);
-//   Serial.print(", oY ");
-//   Serial.print(dotOld[0][0] / vPixelDensity);
-//   Serial.print(", cY ");
-//   Serial.print(dotPositionY[0][0] / vPixelDensity);
-//   Serial.print(", tY ");
-//   Serial.println(dotTarget[0][0] / vPixelDensity);
+  //  //  //  //  Serial.print(reactionHeight);
+  //   Serial.print(", oY ");
+  //   Serial.print(dotOld[0][0] / vPixelDensity);
+  //   Serial.print(", cY ");
+  //   Serial.print(dotPositionY[0][0] / vPixelDensity);
+  //   Serial.print(", tY ");
+  //   Serial.println(dotTarget[0][0] / vPixelDensity);
   //  Serial.print(", mH");
   //  Serial.println(vMatrixHeight / vPixelDensity);
   //    Serial.print(", AH ");
   //    Serial.println(animationHeight[0]);
-  //    Serial.print(", R ");
-  //    Serial.print(isReacting[1]);
-  //    Serial.print(", RTR ");
-  //    Serial.println(isReadyToReact[1]);
-  //  Serial.print(", A ");
-  //  Serial.print(isActive[0]);
-  //  Serial.print(", WA ");
-  //  Serial.print(wasActive[0]);
-  //  Serial.print(", DM ");
-  //  Serial.print(isDotMoving[0][0]);
-  //  Serial.print(", H ");
-  //  Serial.println(isHurrying[0][0]);
-  // Serial.print("BU ");
-  // Serial.print(buildUp[0]);
+//  Serial.print(", R1 ");
+//  Serial.print(isReacting[0][0]);
+//  Serial.print(", RT1 ");
+//  Serial.print(isReadyToReact[0][0]);
+//  Serial.print(", R2 ");
+//  Serial.print(isReacting[0][1]);
+//  Serial.print(", RT2 ");
+//  Serial.println(isReadyToReact[0][1]);
+  //    Serial.print(", A ");
+  //    Serial.print(isActive[0]);
+  //    Serial.print(", WA ");
+  //    Serial.print(wasActive[0]);
+  //    Serial.print(", DM ");
+  //    Serial.print(isDotMoving[0][0]);
+  //    Serial.print(", H ");
+  //    Serial.print(isHurrying[0][0]);
+  //    Serial.print(", Ht ");
+  //    Serial.println(hurryT[0][0]);
+  //      Serial.print(", R ");
+  //    Serial.println(isRelaxing[0][0]);
+  //   Serial.print("BU ");
+  //   Serial.print(buildUp[0]);
   //  Serial.print(", HR ");
   //  Serial.print(highestReading);
-  // Serial.print(", C ");
-  // Serial.println(isClimaxing[0]);
+  //     Serial.print(", C ");
+  //     Serial.println(isClimaxing[0]);
   //  Serial.print(", AL ");
   //  Serial.println(numActiveConfettiLeds);
   //  Serial.print("N1 ");
@@ -246,32 +258,45 @@ void determineStates() {
 
     if (!isClimaxing[s]) {
 
-      if (currentActivity[s] > deactiveThreshold) {
+      if (currentActivity[s] > deactiveThreshold[s]) {
         //Be active
         isActive[s] = true;
         lastInteractionTime[s] = millis();
-      } else if (currentActivity[s] < deactiveThreshold && millis() - lastInteractionTime[s]  > timeThreshold) {
+      } else if (currentActivity[s] < deactiveThreshold[s] && millis() - lastInteractionTime[s]  > timeThreshold) {
         //Become idle
         totalInteractionTime += millis() - startInteractionTime;
         isActive[s] = false;
         buildUp[s] = constrain(buildUp[s] - 1, 0, climaxThreshold);
-        //buildUp[s] = constrain(buildUp[s], 0, climaxThreshold);
       }
 
-      if (isActive[s] && isReadyToReact[s] && currentActivity[s] - lastActivity[s] > reactionThreshold) {
-        isReacting[s] = true;
+      boolean isReady = false;
+      for (int i = 0; i < numConcurrentReactions; i++) {
+        if (isReadyToReact[s][i]) {
+          isReady = true;
+        }
+      }
+
+      if (isActive[s] && isReady && currentActivity[s] - lastActivity[s] > reactionThreshold && !reactionLocked[s]) {
+        triggerReaction(s);
+        reactionLocked[s] = true;
         buildUp[s]++;
         // Serial.println(buildUp[s]);
         buildUp[s] = constrain(buildUp[s], 0, 255);
-        uint8_t heightRaw = map(currentActivity[s], lastActivity[s], 255, 160, vMatrixHeight / 2);
-        reactionHeight[s] = constrain(heightRaw, 0, vMatrixHeight / 2);
       }
       if (buildUp[s] >= climaxThreshold) {
         //Climax
         isClimaxing[s] = true;
         i2cClimax = 1;
         isActive[s] = false;
-        isReacting[s] = false;
+        for (int i = 0; i < numConcurrentReactions; i++) {
+          isReacting[s][i] = false;
+        };
+      }
+      //if (lastActivity[s] - currentActivity[s] > 5){
+      //reactionLocked[s] = false;
+      //}      
+      if (currentActivity[s] < lastActivity[s]){
+      reactionLocked[s] = false;
       }
     }
   }
@@ -285,8 +310,10 @@ void setAnimation() {
       if (isFadingIn[s]) {
         fadeInAnimation(s);
       }
-      if (isReacting[s]) {
-        reactionAnimation(s);
+      for (int i = 0; i < numConcurrentReactions; i++) {
+        if (isReacting[s][i]) {
+          reactionAnimation(s, i);
+        }
       }
     } else {
       climaxAnimation(s);
@@ -320,10 +347,14 @@ void readCalculate() {
 
     lastActivity[s] = currentActivity[s];
     currentActivity[s] = lastSensorAverage[s];
+
+    deactiveThreshold[s] = highestReading[s] / 8;
+
   }
 }
 
 void noiseAnimation(uint8_t s) {
+  //  fill_solid(leds[s], kMatrixWidth * kMatrixHeight, CRGB::Black);
   fillnoise8(s);
   mapNoiseToLEDsUsingPalette(s);
 }
@@ -339,6 +370,7 @@ void dotAnimation(uint8_t s) {
       dotOld[s][x] = dotPositionY[s][x];
       dotT[s][x] = 0;
       isRelaxing[s][x] = false;
+      relaxT[s][x] = 0;
       startInteractionTime = millis();
     } else if (wasActive[s] && !isActive[s]) {
       //If it is changing to idle. Make the animation start slowly
@@ -346,12 +378,13 @@ void dotAnimation(uint8_t s) {
       dotOld[s][x] = dotPositionY[s][x];
       dotT[s][x] = 0;
       isHurrying[s][x] = false;
+      hurryT[s][x] = 0;
     }
 
     if (isActive[s]) { //Oscillate
       //If Semeion is active and is not changing. Make the two dots oscillate with the currentActivity level´
       float shift = (float)(climaxThreshold - buildUp[s]) / climaxThreshold;
-      uint16_t y = vMatrixHeight / 2 + ((sin8(dotT[s][x] + (x * (127 * shift))) / 255.0 - 0.5) * (max(0, currentActivity[s] - deactiveThreshold) * (vPixelDensity / 5)));
+      uint16_t y = vMatrixHeight / 2 + ((sin8(dotT[s][x] + (x * (127 * shift))) / 255.0 - 0.5) * (max(0, currentActivity[s] - deactiveThreshold[s]) * (vPixelDensity / 5)));
 
       if (isHurrying[s][x]) {
         dotPositionY[s][x] = hurryAnimation(s, x, y);
@@ -391,10 +424,9 @@ void dotAnimation(uint8_t s) {
       isDotMoving[s][x] = false;
       dotT[s][x] = 0;
     }
-      CRGB color = ColorFromPalette(noisePalette, baseHue + 127, 255);
-      downsampleDots(s, x, dotPositionY[s][x], color);
+    CRGB color = ColorFromPalette(noisePalette, baseHue + 127, 255);
+    downsampleDots(s, x, dotPositionY[s][x], color);
   }
-
 
   if (isActive[s]) {
     wasActive[s] = true;
@@ -435,58 +467,79 @@ uint16_t relaxAnimation(uint8_t s, uint8_t x, uint16_t y) {
   return constrain(easedY, 0, vMatrixHeight);
 }
 
+void triggerReaction(uint8_t s) {
+  boolean startedReaction = false;
 
-void reactionAnimation(uint8_t s) {
+  for (int i = 0; i < numConcurrentReactions; i++) {
+    if (isReacting[s][i] == false && !startedReaction) {
+      isReacting[s][i] = true;
+      startedReaction = true;
+      //Serial.print(startedReaction);Serial.println("s");
+      setReactionHeight(s, i);
+    }
+  }
+}
+
+void reactionAnimation(uint8_t s, uint8_t j) {
   float curve[] = {1, 1, 1, 0, 40}; // Hard flash ease out
-  float movement[] = {0, 1, 1, 0, 40}; // Fast start, slow down
+  float react = (float) baseSat / 255;
+  float movement[] = {0, 1, react, react, 40}; // Fast start, slow down
 
-  boolean stillReacting = false;
+  boolean stillReacting[] = {false, false};
 
-  if (isReadyToReact[s]) {
+
+  if (isReadyToReact[s][j]) {
     for (int x = 0; x < kMatrixWidth; x++) {
-      for (int i = 0; i < numActiveReactionLeds; i++) {
-        if (activeReactionLedsT[s][x][i] >= 255) {
-          activeReactionLedsY[s][x][i] = dotPositionY[s][x];
-          activeReactionLedsT[s][x][i] = 0;
+      for (int i = 0; i < 2; i++) {
+        if (activeReactionLedsT[s][x][i + (j * 2)] >= 255) {
+          activeReactionLedsY[s][x][i + (j * 2)] = dotPositionY[s][x];
+          activeReactionLedsT[s][x][i + (j * 2)] = 0;
         }
       }
     }
   }
 
-  isReadyToReact[s] = false;
+  isReadyToReact[s][j] = false;
   for (int x = 0; x < kMatrixWidth; x++) {
-    for (int i = 0; i < numActiveReactionLeds; i++) {
-      if (activeReactionLedsT[s][x][i] < 254) {
-        float deltaB = animate(curve, activeReactionLedsT[s][x][i]);
-        float deltaP = animate(movement, activeReactionLedsT[s][x][i]);
+    for (int i = 0; i < numConcurrentReactions; i++) {
+      if (activeReactionLedsT[s][x][i + (j * 2)] < 254) {
+        float deltaB = animate(curve, activeReactionLedsT[s][x][i + (j * 2)]);
+        float deltaP = animate(movement, activeReactionLedsT[s][x][i + (j * 2)]);
         float y;
         if ( i % 2) {
-          y = activeReactionLedsY[s][x][i] + (deltaP * reactionHeight[s]);
+          y = activeReactionLedsY[s][x][i + (j * 2)] + (deltaP * reactionHeight[s][j]);
         }
         else {
-          y = activeReactionLedsY[s][x][i] - (deltaP * reactionHeight[s]);
+          y = activeReactionLedsY[s][x][i + (j * 2)] - (deltaP * reactionHeight[s][j]);
         }
         y = round(constrain(y, 0, vMatrixHeight));
-        uint8_t bri = (uint8_t) map(reactionHeight[s], 0, 35, 150, 255);
+        uint8_t bri = (uint8_t) map(reactionHeight[s][j], 0, vMatrixHeight / 2, 150, 255);
         //leds[s][XY(x, y)] += CHSV(0, 0, deltaB * bri);
         CRGB c = CHSV(0, 0, deltaB * bri);
-        downsampleDots(s, x, y, c); 
+        downsampleDots(s, x, y, c);
         //leds[activeReactionLedsY[s][i]] = CHSV(0, 255,  deltaB * 255);
-        activeReactionLedsT[s][x][i] = animateTime(curve[4], activeReactionLedsT[s][x][i]);
-        stillReacting = true;
+        activeReactionLedsT[s][x][i + (j * 2)] = animateTime(curve[4], activeReactionLedsT[s][x][i + (j * 2)]);
+        stillReacting[j] = true;
       }
     }
   }
 
-  if (!stillReacting && currentActivity[s] < 240) {
-    isReadyToReact[s] = true;
-    isReacting[s] = false;
-  } else if (!stillReacting && currentActivity[s] > 240) {
-    isReadyToReact[s] = true;
+  if (!stillReacting[j] && currentActivity[s] < 240) {
+    isReadyToReact[s][j] = true;
+    isReacting[s][j] = false;
+  } else if (!stillReacting[j] && currentActivity[s] > 240) {
+    isReadyToReact[s][j] = true;
     buildUp[s]++;
-    uint8_t heightRaw = map(currentActivity[s], 240, 255, 160, vMatrixHeight / 2);
-    reactionHeight[s] = constrain(heightRaw, 0, vMatrixHeight / 2);
+    setReactionHeight(s, j);
+  } else if (stillReacting[j]) {
+    //triggerReaction(s);
   }
+
+}
+
+void setReactionHeight(uint8_t s, uint8_t i) {
+  uint8_t heightRaw = map(currentActivity[s], 240, 255, 160, vMatrixHeight / 2);
+  reactionHeight[s][i] = constrain(heightRaw, 0, vMatrixHeight / 2);
 }
 
 void climaxAnimation(uint8_t s) {
@@ -497,7 +550,7 @@ void climaxAnimation(uint8_t s) {
   for (int i = 0; i < kMatrixWidth; i++) {
     for (int j = 0; j < kMatrixHeight; j++) {
       //leds[s][XY(i, j)] = CHSV(baseHue, 150, 255 * y);
-      leds[s][XY(i, j)] = ColorFromPalette( noisePalette, baseHue + 127, 255*y);
+      leds[s][XY(i, j)] = ColorFromPalette( noisePalette, baseHue + 127, 255 * y);
     }
   }
 
@@ -555,20 +608,6 @@ uint8_t animateTime(float duration, uint8_t currentTime, float speedMultiplier) 
   uint8_t newTime = constrain((uint8_t)round(t * 255.0), 0, 255);
   return newTime;
 }
-
-//uint8_t animateTime(float duration, uint8_t currentTime, float speedMultiplier) {
-//
-//  uint8_t t = currentTime;
-//
-//  if (t + (speedMultiplier / duration) >= 255) {
-//    t = 255;
-//  } else {
-//    t += (speedMultiplier / duration) * 255;
-//  }
-//
-//  uint8_t newTime = constrain(t, 0, 255);
-//  return newTime;
-//}
 
 uint8_t animateTime(float duration, uint8_t currentTime) {
   return animateTime(duration, currentTime, 1.0);
@@ -669,21 +708,20 @@ void mapNoiseToLEDsUsingPalette(uint8_t s) {
 
       uint8_t glitterLimit = (255 / dimFactor);
       if ( bri > glitterLimit - buildUp[s]) {
-        float factor = (float) (bri - (glitterLimit - buildUp[s])) / glitterLimit; 
-        uint8_t highest; 
-        
+        float factor = (float) (bri - (glitterLimit - buildUp[s])) / glitterLimit;
+        uint8_t highest;
+
         highest = color.r ;
         if ( color.g > highest) {
-          highest = color.g;  
+          highest = color.g;
         }
         if (color.b > highest) {
-          highest = color.b;  
+          highest = color.b;
         }
 
-        color += CRGB(highest - color.r * factor , highest - color.g * factor, highest - color.b * factor); 
-      } 
+        color += CRGB(highest - color.r * factor , highest - color.g * factor, highest - color.b * factor);
+      }
 
-      
       //color += CRGB(buildUp[s], buildUp[s], buildUp[s]);
 
       for (int i = 0; i < scale; i++) {
@@ -697,20 +735,23 @@ void mapNoiseToLEDsUsingPalette(uint8_t s) {
 
 void downsampleDots(uint8_t s, uint8_t x, uint16_t y, CRGB c) {
 
-    float pos = (float) y / vPixelDensity ;
+  float pos = (float) y / vPixelDensity ;
 
-    float delta = fmod(pos, 1);
+  float delta = fmod(pos, 1);
 
-    uint8_t r_c = round(c.r * delta);
-    uint8_t g_c = round(c.g * delta);
-    uint8_t b_c = round(c.b * delta);
+  uint8_t r_c = round(c.r * delta);
+  uint8_t g_c = round(c.g * delta);
+  uint8_t b_c = round(c.b * delta);
 
-    uint8_t r_f = round(c.r * (1.0f - delta));
-    uint8_t g_f = round(c.g * (1.0f - delta));
-    uint8_t b_f = round(c.b * (1.0f - delta));
+  uint8_t r_f = round(c.r * (1.0f - delta));
+  uint8_t g_f = round(c.g * (1.0f - delta));
+  uint8_t b_f = round(c.b * (1.0f - delta));
 
-    leds[s][XY(x, ceil(pos))] += CRGB(r_c, g_c, b_c);
-    leds[s][XY(x, floor(pos))] += CRGB(r_f, g_f, b_f);
+  uint8_t floorPos = floor(pos);
+  uint8_t ceilPos = ceil(pos);
+
+  leds[s][XY(x, constrain(ceilPos, 0, kMatrixHeight))] += CRGB(r_c, g_c, b_c);
+  leds[s][XY(x, constrain(floorPos, 0, kMatrixHeight))] += CRGB(r_f, g_f, b_f);
 }
 
 /**
