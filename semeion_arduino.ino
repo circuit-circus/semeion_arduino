@@ -126,6 +126,7 @@ uint16_t dotOld[2][2];
 uint8_t dotT[2][2];
 uint8_t hurryT[2][2];
 uint8_t relaxT[2][2];
+uint8_t beatT[2][2];
 boolean isDotMoving[2][2];
 boolean isHurrying[2][2];
 boolean isRelaxing[2][2];
@@ -194,14 +195,14 @@ void loop() {
   //    Serial.print(isRollingDown[0]);
   //    Serial.print(" UP ");
   //  //    Serial.print(isRollingUp[0]);
-  //Serial.print("A0 ");
-  Serial.println(currentActivity[0]);
-  //  Serial.print(", A1 ");
-  //  Serial.print(currentActivity[1]);
-  //  Serial.print(", DT ");
-  //  Serial.print(deactiveThreshold[0]);
-  //  Serial.print(", DT ");
-  //  Serial.println(deactiveThreshold[1]);
+  Serial.print("A0 ");
+  Serial.print(currentActivity[0]);
+  Serial.print(", A1 ");
+  Serial.print(currentActivity[1]);
+  Serial.print(", DT ");
+  Serial.print(deactiveThreshold[0]);
+  Serial.print(", DT ");
+  Serial.println(deactiveThreshold[1]);
   //  Serial.print("L ");
   //  Serial.print(lastActivity[0]);
   //  Serial.print("H ");
@@ -218,14 +219,14 @@ void loop() {
   //  Serial.println(vMatrixHeight / vPixelDensity);
   //    Serial.print(", AH ");
   //    Serial.println(animationHeight[0]);
-//  Serial.print(", R1 ");
-//  Serial.print(isReacting[0][0]);
-//  Serial.print(", RT1 ");
-//  Serial.print(isReadyToReact[0][0]);
-//  Serial.print(", R2 ");
-//  Serial.print(isReacting[0][1]);
-//  Serial.print(", RT2 ");
-//  Serial.println(isReadyToReact[0][1]);
+  //  Serial.print(", R1 ");
+  //  Serial.print(isReacting[0][0]);
+  //  Serial.print(", RT1 ");
+  //  Serial.print(isReadyToReact[0][0]);
+  //  Serial.print(", R2 ");
+  //  Serial.print(isReacting[0][1]);
+  //  Serial.print(", RT2 ");
+  //  Serial.println(isReadyToReact[0][1]);
   //    Serial.print(", A ");
   //    Serial.print(isActive[0]);
   //    Serial.print(", WA ");
@@ -294,9 +295,9 @@ void determineStates() {
       }
       //if (lastActivity[s] - currentActivity[s] > 5){
       //reactionLocked[s] = false;
-      //}      
-      if (currentActivity[s] < lastActivity[s]){
-      reactionLocked[s] = false;
+      //}
+      if (currentActivity[s] < lastActivity[s]) {
+        reactionLocked[s] = false;
       }
     }
   }
@@ -364,6 +365,13 @@ void dotAnimation(uint8_t s) {
 
   for (int x = 0; x < kMatrixWidth; x++) {
 
+    uint8_t bri = quadwave8(beatT[s][x]) / 2 + 127 ;
+    bri = constrain(bri, 0, 255);
+    beatT[s][x] = animateTime(40 - buildUp[s], beatT[s][x]);
+    if (beatT[s][x] > 255) {
+      beatT[s][x] = 0;
+    }
+
     if (!wasActive[s] && isActive[s]) {
       //If it is changing to become active, hurry the dots to the middle of the display
       isHurrying[s][x] = true;
@@ -424,7 +432,7 @@ void dotAnimation(uint8_t s) {
       isDotMoving[s][x] = false;
       dotT[s][x] = 0;
     }
-    CRGB color = ColorFromPalette(noisePalette, baseHue + 127, 255);
+    CRGB color = ColorFromPalette(noisePalette, baseHue + 127, bri);
     downsampleDots(s, x, dotPositionY[s][x], color);
   }
 
