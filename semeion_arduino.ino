@@ -29,7 +29,7 @@ const uint8_t vPixelDensity = 16;
 const uint16_t vMatrixHeight = kMatrixHeight * vPixelDensity;
 const uint8_t noiseHeight = kMatrixHeight / 2;
 
-// Param for different pixel layouts
+// Param for different pixel layoutsd
 const bool    kMatrixSerpentineLayout = true;
 
 #define COLOR_ORDER GRB
@@ -47,11 +47,11 @@ const uint8_t numSides = 2;
 volatile uint8_t baseHue = 150;
 volatile uint8_t baseSat = 255;
 
-const uint8_t climaxThreshold = 25;
-uint8_t deactiveThreshold[2];
+const uint8_t climaxThreshold = 70;
 const int timeThreshold = 100;
 const uint8_t reactionThreshold = 2;
 const uint8_t numConcurrentReactions = 2;
+const uint8_t deactiveThreshold[] = {160, 160};
 
 static uint16_t noiseX;
 static uint16_t noiseY;
@@ -195,14 +195,14 @@ void loop() {
   //    Serial.print(isRollingDown[0]);
   //    Serial.print(" UP ");
   //  //    Serial.print(isRollingUp[0]);
-  Serial.print("A0 ");
-  Serial.print(currentActivity[0]);
-  Serial.print(", A1 ");
-  Serial.print(currentActivity[1]);
-  Serial.print(", DT ");
-  Serial.print(deactiveThreshold[0]);
-  Serial.print(", DT ");
-  Serial.println(deactiveThreshold[1]);
+//  Serial.print("A0 ");
+  Serial.println(currentActivity[0]);
+//  Serial.print(", A1 ");
+//  Serial.print(currentActivity[1]);
+//  Serial.print(", DT ");
+//  Serial.print(deactiveThreshold[0]);
+//  Serial.print(", DT ");
+//  Serial.println(deactiveThreshold[1]);
   //  Serial.print("L ");
   //  Serial.print(lastActivity[0]);
   //  Serial.print("H ");
@@ -349,7 +349,7 @@ void readCalculate() {
     lastActivity[s] = currentActivity[s];
     currentActivity[s] = lastSensorAverage[s];
 
-    deactiveThreshold[s] = highestReading[s] / 8;
+    
 
   }
 }
@@ -392,6 +392,7 @@ void dotAnimation(uint8_t s) {
     if (isActive[s]) { //Oscillate
       //If Semeion is active and is not changing. Make the two dots oscillate with the currentActivity level´
       float shift = (float)(climaxThreshold - buildUp[s]) / climaxThreshold;
+
       uint16_t y = vMatrixHeight / 2 + ((sin8(dotT[s][x] + (x * (127 * shift))) / 255.0 - 0.5) * (max(0, currentActivity[s] - deactiveThreshold[s]) * (vPixelDensity / 5)));
 
       if (isHurrying[s][x]) {
@@ -537,7 +538,7 @@ void reactionAnimation(uint8_t s, uint8_t j) {
     isReacting[s][j] = false;
   } else if (!stillReacting[j] && currentActivity[s] > 240) {
     isReadyToReact[s][j] = true;
-    buildUp[s]++;
+    //buildUp[s]++;
     setReactionHeight(s, j);
   } else if (stillReacting[j]) {
     //triggerReaction(s);
@@ -714,21 +715,21 @@ void mapNoiseToLEDsUsingPalette(uint8_t s) {
 
       CRGB color = ColorFromPalette( noisePalette, index, bri);
 
-      uint8_t glitterLimit = (255 / dimFactor);
-      if ( bri > glitterLimit - buildUp[s]) {
-        float factor = (float) (bri - (glitterLimit - buildUp[s])) / glitterLimit;
-        uint8_t highest;
-
-        highest = color.r ;
-        if ( color.g > highest) {
-          highest = color.g;
-        }
-        if (color.b > highest) {
-          highest = color.b;
-        }
-
-        color += CRGB(highest - color.r * factor , highest - color.g * factor, highest - color.b * factor);
-      }
+//      uint8_t glitterLimit = (255 / dimFactor);
+//      if ( bri > glitterLimit - buildUp[s]) {
+//        float factor = (float) (bri - (glitterLimit - buildUp[s])) / glitterLimit;
+//        uint8_t highest;
+//
+//        highest = color.r ;
+//        if ( color.g > highest) {
+//          highest = color.g;
+//        }
+//        if (color.b > highest) {
+//          highest = color.b;
+//        }
+//
+//        color += CRGB(highest - color.r * factor , highest - color.g * factor, highest - color.b * factor);
+//      }
 
       //color += CRGB(buildUp[s], buildUp[s], buildUp[s]);
 
