@@ -155,11 +155,12 @@ int highestReading[] = {100, 100};
 #define SLAVE_ADDRESS 0x08
 
 uint8_t counter = 0;
-const uint8_t sendBufferSize = 6;
+const uint8_t sendBufferSize = 8;
 const uint8_t receiveBufferSize = 9;
 uint8_t receiveBuffer[receiveBufferSize];
 uint8_t sendBuffer[sendBufferSize];
 volatile bool i2cClimax = 0;
+volatile uint8_t sensorStates[] = {0, 0};
 
 void setup() {
   Serial.begin(9600);
@@ -348,6 +349,7 @@ void readCalculate() {
 
     lastActivity[s] = currentActivity[s];
     currentActivity[s] = lastSensorAverage[s];
+    sensorStates[s] = currentActivity[s];
 
     
 
@@ -807,6 +809,8 @@ void writeStates() {
   sendBuffer[3] = (isActive[1] ? 1 : 0);
   sendBuffer[4] = (isReacting[0] ? 1 : 0);
   sendBuffer[5] = (isReacting[1] ? 1 : 0);
+  sendBuffer[6] = sensorStates[0];
+  sendBuffer[7] = sensorStates[1];
 
   Wire.write(sendBuffer, sendBufferSize);
 
