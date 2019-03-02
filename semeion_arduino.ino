@@ -47,19 +47,19 @@ const uint8_t numSides = 2;
 volatile uint8_t baseHue = 150;
 volatile uint8_t baseSat = 255;
 
-const uint8_t climaxThreshold = 70;
-const uint8_t timeThreshold = 100;
+const uint8_t climaxThreshold = 50;
+const int timeThreshold = 1000;
 const uint8_t reactionThreshold = 2;
 const uint8_t numConcurrentReactions = 2;
 const uint8_t deactiveThreshold[] = {160, 160};
 
-//static uint16_t noiseX;
-//static uint16_t noiseY;
+static uint16_t noiseX;
+static uint16_t noiseY;
 static uint16_t noiseZ;
 //static int noiseScale = 200;
 static int noiseScale = 1000;
 uint8_t noise[2][kMatrixWidth][noiseHeight];
-uint8_t paletteRatio = 3;
+uint8_t paletteRatio = 5;
 
 //DEFINE_GRADIENT_PALETTE(NoisePalette_p) { //Bølgen
 //  0, 255, 149, 2,
@@ -68,11 +68,10 @@ uint8_t paletteRatio = 3;
 //  255, 255, 149, 2
 //};
 
-DEFINE_GRADIENT_PALETTE(NoisePalette_p) { //Turkis, magenta, orange, blå
+DEFINE_GRADIENT_PALETTE(NoisePalette_p) { //Turkis, magenta, blå
   0, 49, 247, 247,
-  60, 50, 47, 249,
-  120, 239, 45, 178,
-  180, 255, 134, 48,
+  80, 50, 47, 249,
+  170, 239, 45, 178,
   255, 49, 247, 247
 };
 //
@@ -85,7 +84,7 @@ DEFINE_GRADIENT_PALETTE(NoisePalette_p) { //Turkis, magenta, orange, blå
 CRGBPalette16 noisePalette( NoisePalette_p );
 
 //Input
-const uint8_t numReadings = 3;
+const int numReadings = 3;
 
 SimpleTimer timer;
 
@@ -101,10 +100,10 @@ CRGB leds[2][NUM_LEDS];
 const uint8_t ledPin[] = {LED0, LED1};
 const uint8_t dopplerPin[] = {DOPPLER0, DOPPLER1};
 
-uint8_t currentActivity[2];
-uint8_t activityDelta[2];
-uint8_t lastActivity[2];
-unsigned long lastInteractionTime[2];
+int currentActivity[2];
+int activityDelta[2];
+int lastActivity[2];
+long lastInteractionTime[2];
 
 unsigned long startInteractionTime = 0;
 unsigned long totalInteractionTime = 0;
@@ -141,12 +140,12 @@ uint8_t fadeInT[] = {0, 0};
 
 uint8_t climaxT[2];
 
-uint16_t dopplerVal[2]; // Mellem 500-1024, skal smoothes
+int dopplerVal[2]; // Mellem 500-1024, skal smoothes
 
-int lastSensorAverage[2]; // det sidste stykke tids læsninger 
+int lastSensorAverage[2]; // det sidste stykke tids læsninger
 int lastSensorTotal[2];
 int lastSensorReadings[2][numReadings];
-uint8_t readIndex[2];
+int readIndex[2];
 
 // These will be used to determine lower and higher bounds
 int lowestReading[] = {520, 520};
@@ -177,7 +176,7 @@ void setup() {
 
   timer.setInterval(50, readCalculate);
 
-  for (uint8_t s = 0; s < numSides; s++) {
+  for (int s = 0; s < numSides; s++) {
     pinMode(dopplerPin[s], INPUT);
 
     fill_solid(leds[s], kMatrixWidth * kMatrixHeight, CRGB::Black);
@@ -197,14 +196,14 @@ void loop() {
   //    Serial.print(isRollingDown[0]);
   //    Serial.print(" UP ");
   //  //    Serial.print(isRollingUp[0]);
-//  Serial.print("A0 ");
-  Serial.println(currentActivity[0]);
-//  Serial.print(", A1 ");
-//  Serial.print(currentActivity[1]);
-//  Serial.print(", DT ");
-//  Serial.print(deactiveThreshold[0]);
-//  Serial.print(", DT ");
-//  Serial.println(deactiveThreshold[1]);
+  //  Serial.print("A0 ");
+  //Serial.println(currentActivity[0]);
+  //  Serial.print(", A1 ");
+  //  Serial.print(currentActivity[1]);
+  //  Serial.print(", DT ");
+  //  Serial.print(deactiveThreshold[0]);
+  //  Serial.print(", DT ");
+  //  Serial.println(deactiveThreshold[1]);
   //  Serial.print("L ");
   //  Serial.print(lastActivity[0]);
   //  Serial.print("H ");
@@ -257,7 +256,7 @@ void loop() {
 
 void determineStates() {
 
-  for (uint8_t s = 0; s < numSides; s++) {
+  for (int s = 0; s < numSides; s++) {
 
     if (!isClimaxing[s]) {
 
@@ -273,7 +272,7 @@ void determineStates() {
       }
 
       boolean isReady = false;
-      for (uint8_t i = 0; i < numConcurrentReactions; i++) {
+      for (int i = 0; i < numConcurrentReactions; i++) {
         if (isReadyToReact[s][i]) {
           isReady = true;
         }
@@ -291,13 +290,10 @@ void determineStates() {
         isClimaxing[s] = true;
         i2cClimax = 1;
         isActive[s] = false;
-        for (uint8_t i = 0; i < numConcurrentReactions; i++) {
+        for (int i = 0; i < numConcurrentReactions; i++) {
           isReacting[s][i] = false;
         };
       }
-      //if (lastActivity[s] - currentActivity[s] > 5){
-      //reactionLocked[s] = false;
-      //}
       if (currentActivity[s] < lastActivity[s]) {
         reactionLocked[s] = false;
       }
@@ -306,17 +302,17 @@ void determineStates() {
 }
 
 void setAnimation() {
-  for (uint8_t s = 0; s < numSides; s++) {
+  for (int s = 0; s < numSides; s++) {
     if (!isClimaxing[s]) {
       noiseAnimation(s);
       dotAnimation(s);
-      if (isFadingIn[s]) {
-        fadeInAnimation(s);
-      }
-      for (uint8_t i = 0; i < numConcurrentReactions; i++) {
+      for (int i = 0; i < numConcurrentReactions; i++) {
         if (isReacting[s][i]) {
           reactionAnimation(s, i);
         }
+      }
+      if (isFadingIn[s]) {
+        fadeInAnimation(s);
       }
     } else {
       climaxAnimation(s);
@@ -326,7 +322,7 @@ void setAnimation() {
 
 void readCalculate() {
 
-  for (uint8_t s = 0; s < numSides; s++) {
+  for (int s = 0; s < numSides; s++) {
     dopplerVal[s] = analogRead(dopplerPin[s]);
 
     if (dopplerVal[s] < lowestReading[s]) {
@@ -352,8 +348,6 @@ void readCalculate() {
     currentActivity[s] = lastSensorAverage[s];
     sensorStates[s] = currentActivity[s];
 
-    
-
   }
 }
 
@@ -365,13 +359,22 @@ void noiseAnimation(uint8_t s) {
 
 void dotAnimation(uint8_t s) {
   float curve[] = {0.0, 1.59, 0.03, 1.0, 50};
+  uint16_t height = 16;
 
-  for (uint8_t x = 0; x < kMatrixWidth; x++) {
+  float scale = (float)buildUp[s] / climaxThreshold;
 
-    uint8_t bri = quadwave8(beatT[s][x]) / 2 + 127 ;
+  for (int x = 0; x < kMatrixWidth; x++) {
+
+    float waveVal = (float) quadwave8(beatT[s][x]) / 255 ;
+    uint8_t bri = 255 - (50 + (waveVal * 205)) * scale;
+    height = waveVal * (vMatrixHeight/2) * scale;
+
+    height = constrain(height, vPixelDensity, vMatrixHeight);
     bri = constrain(bri, 0, 255);
-    beatT[s][x] = animateTime(40 - buildUp[s], beatT[s][x]);
-    if (beatT[s][x] > 255) {
+    
+    //beatT[s][x] = animateTime(max((climaxThreshold / 3) - buildUp[s], 10), beatT[s][x]);
+    beatT[s][x] = animateTime(50 - 40 * scale, beatT[s][x]);
+    if (beatT[s][x] >= 255 - (127*scale)) {
       beatT[s][x] = 0;
     }
 
@@ -396,7 +399,7 @@ void dotAnimation(uint8_t s) {
       //If Semeion is active and is not changing. Make the two dots oscillate with the currentActivity level´
       float shift = (float)(climaxThreshold - buildUp[s]) / climaxThreshold;
 
-      uint16_t y = vMatrixHeight / 2 + ((quadwave8(dotT[s][x] + (x * (127 * shift))) / 255.0 - 0.5) * (max(0, currentActivity[s] - deactiveThreshold[s]) * (vPixelDensity / 5)));
+      uint16_t y = vMatrixHeight / 2 + ((sin8(dotT[s][x] + (x * (127 * shift))) / 255.0 - 0.5) * (max(0, currentActivity[s] - deactiveThreshold[s]) * (vPixelDensity / 5)));
 
       if (isHurrying[s][x]) {
         dotPositionY[s][x] = hurryAnimation(s, x, y);
@@ -436,8 +439,10 @@ void dotAnimation(uint8_t s) {
       isDotMoving[s][x] = false;
       dotT[s][x] = 0;
     }
+
     CRGB color = ColorFromPalette(noisePalette, baseHue + 127, bri);
-    downsampleDots(s, x, dotPositionY[s][x], color);
+    downsampleDots(s, x, dotPositionY[s][x], height, color);
+
   }
 
   if (isActive[s]) {
@@ -464,7 +469,7 @@ uint16_t hurryAnimation(uint8_t s, uint8_t x, uint16_t y) {
 }
 
 uint16_t relaxAnimation(uint8_t s, uint8_t x, uint16_t y) {
-  float curve[] = {0.0, 0.0, 1.0, 1.0, 80.0};
+  float curve[] = {0.0, 0.0, 1.0, 1.0, 140.0};
 
   int16_t delta = y - dotOld[s][x] ;
   uint16_t easedY = (uint16_t)round(dotOld[s][x] + (delta * animate(curve, relaxT[s][x])));
@@ -482,7 +487,7 @@ uint16_t relaxAnimation(uint8_t s, uint8_t x, uint16_t y) {
 void triggerReaction(uint8_t s) {
   boolean startedReaction = false;
 
-  for (uint8_t i = 0; i < numConcurrentReactions; i++) {
+  for (int i = 0; i < numConcurrentReactions; i++) {
     if (isReacting[s][i] == false && !startedReaction) {
       isReacting[s][i] = true;
       startedReaction = true;
@@ -496,13 +501,11 @@ void reactionAnimation(uint8_t s, uint8_t j) {
   float curve[] = {1, 1, 1, 0, 40}; // Hard flash ease out
   float react = (float) baseSat / 255;
   float movement[] = {0, 1, react, react, 40}; // Fast start, slow down
-
   boolean stillReacting[] = {false, false};
 
-
   if (isReadyToReact[s][j]) {
-    for (uint8_t x = 0; x < kMatrixWidth; x++) {
-      for (uint8_t i = 0; i < 2; i++) {
+    for (int x = 0; x < kMatrixWidth; x++) {
+      for (int i = 0; i < 2; i++) {
         if (activeReactionLedsT[s][x][i + (j * 2)] >= 255) {
           activeReactionLedsY[s][x][i + (j * 2)] = dotPositionY[s][x];
           activeReactionLedsT[s][x][i + (j * 2)] = 0;
@@ -512,8 +515,8 @@ void reactionAnimation(uint8_t s, uint8_t j) {
   }
 
   isReadyToReact[s][j] = false;
-  for (uint8_t x = 0; x < kMatrixWidth; x++) {
-    for (uint8_t i = 0; i < numConcurrentReactions; i++) {
+  for (int x = 0; x < kMatrixWidth; x++) {
+    for (int i = 0; i < numConcurrentReactions; i++) {
       if (activeReactionLedsT[s][x][i + (j * 2)] < 254) {
         float deltaB = animate(curve, activeReactionLedsT[s][x][i + (j * 2)]);
         float deltaP = animate(movement, activeReactionLedsT[s][x][i + (j * 2)]);
@@ -559,8 +562,8 @@ void climaxAnimation(uint8_t s) {
 
   float y = animate(curve, climaxT[s]);
 
-  for (uint8_t i = 0; i < kMatrixWidth; i++) {
-    for (uint8_t j = 0; j < kMatrixHeight; j++) {
+  for (int i = 0; i < kMatrixWidth; i++) {
+    for (int j = 0; j < kMatrixHeight; j++) {
       //leds[s][XY(i, j)] = CHSV(baseHue, 150, 255 * y);
       leds[s][XY(i, j)] = ColorFromPalette( noisePalette, baseHue + 127, 255 * y);
     }
@@ -590,8 +593,8 @@ void fadeInAnimation(uint8_t s) {
 
   float delta = animate(curve, fadeInT[s]);
 
-  for (uint8_t x = 0; x < kMatrixWidth; x++) {
-    for (uint8_t y = 0; y < kMatrixHeight; y++) {
+  for (int x = 0; x < kMatrixWidth; x++) {
+    for (int y = 0; y < kMatrixHeight; y++) {
 
       leds[s][XY(x, y)].r = constrain(leds[s][XY(x, y)].r - round(255 * delta), 0, 255);
       leds[s][XY(x, y)].g = constrain(leds[s][XY(x, y)].g - round(255 * delta), 0, 255);
@@ -656,13 +659,12 @@ void fillnoise8(uint8_t s) {
     dataSmoothing = 200 - (noiseSpeed * 4);
   }
 
-  for (uint8_t i = 0; i < kMatrixWidth; i++) {
+  for (int i = 0; i < kMatrixWidth; i++) {
     int ioffset = noiseScale * i;
-    for (uint8_t j = 0; j < noiseHeight; j++) {
+    for (int j = 0; j < noiseHeight; j++) {
       int joffset = noiseScale * j;
 
-      //uint8_t data = inoise8(noiseX + ioffset, noiseY + joffset, noiseZ);
-      uint8_t data = inoise8(0 + ioffset, 0 + joffset, noiseZ);
+      uint8_t data = inoise8(noiseX + ioffset, noiseY + joffset, noiseZ);
 
       // The range of the inoise8 function is roughly 16-238.
       // These two operations expand those values out to roughly 0..255
@@ -680,8 +682,6 @@ void fillnoise8(uint8_t s) {
     }
   }
 
-
-
   noiseZ += noiseSpeed;
 
   // apply slow drift to X and Y, just for visual variation.
@@ -693,8 +693,8 @@ void mapNoiseToLEDsUsingPalette(uint8_t s) {
   //static uint8_t ihue = 0;
   uint8_t dimFactor = 10;
 
-  for (uint8_t x = 0; x < kMatrixWidth; x++) {
-    for (uint8_t y = 0; y < noiseHeight; y++) {
+  for (int x = 0; x < kMatrixWidth; x++) {
+    for (int y = 0; y < noiseHeight; y++) {
       // We use the value at the (i,j) coordinate in the noise
       // array for our brightness, and the flipped value from (j,i)
       // for our pixel's index into the color palette.
@@ -719,25 +719,25 @@ void mapNoiseToLEDsUsingPalette(uint8_t s) {
 
       CRGB color = ColorFromPalette( noisePalette, index, bri);
 
-//      uint8_t glitterLimit = (255 / dimFactor);
-//      if ( bri > glitterLimit - buildUp[s]) {
-//        float factor = (float) (bri - (glitterLimit - buildUp[s])) / glitterLimit;
-//        uint8_t highest;
-//
-//        highest = color.r ;
-//        if ( color.g > highest) {
-//          highest = color.g;
-//        }
-//        if (color.b > highest) {
-//          highest = color.b;
-//        }
-//
-//        color += CRGB(highest - color.r * factor , highest - color.g * factor, highest - color.b * factor);
-//      }
+      //      uint8_t glitterLimit = (255 / dimFactor);
+      //      if ( bri > glitterLimit - buildUp[s]) {
+      //        float factor = (float) (bri - (glitterLimit - buildUp[s])) / glitterLimit;
+      //        uint8_t highest;
+      //
+      //        highest = color.r ;
+      //        if ( color.g > highest) {
+      //          highest = color.g;
+      //        }
+      //        if (color.b > highest) {
+      //          highest = color.b;
+      //        }
+      //
+      //        color += CRGB(highest - color.r * factor , highest - color.g * factor, highest - color.b * factor);
+      //      }
 
       //color += CRGB(buildUp[s], buildUp[s], buildUp[s]);
 
-      for (uint8_t i = 0; i < scale; i++) {
+      for (int i = 0; i < scale; i++) {
         leds[s][XY(x, constrain(y * scale + i, 0, kMatrixHeight))] = color;
       }
     }
@@ -746,25 +746,51 @@ void mapNoiseToLEDsUsingPalette(uint8_t s) {
   //  ihue += 1;
 }
 
+void downsampleDots(uint8_t s, uint8_t x, uint16_t y, uint16_t h, CRGB c) {
+
+  float posStart, posEnd, posCenter;
+
+  posCenter = (float) y / vPixelDensity ;
+
+  if (h > 16) {
+
+    posStart = (float) (y - (h / 2)) / vPixelDensity;
+    posEnd = (float) (y + (h / 2)) / vPixelDensity;
+
+    downsample(s, x, posStart, c, 1);
+    downsample(s, x, posEnd, c, 2);
+
+    for (int i = 0; i < (h / vPixelDensity) + 1 ; i++) {
+      uint8_t linePos = posCenter - ((h / 2) / vPixelDensity) + i ; //Calculate positions between start and end
+      leds[s][XY(x, constrain(linePos, 0, kMatrixHeight))] += CRGB(c.r, c.g, c.b);
+    }
+
+  } else {
+    downsample(s, x, posCenter, c, 3);
+  }
+}
+
 void downsampleDots(uint8_t s, uint8_t x, uint16_t y, CRGB c) {
+  downsampleDots(s, x, y, 1, c);
+}
 
-  float pos = (float) y / vPixelDensity ;
-
+void downsample(uint8_t s, uint8_t x, float pos, CRGB c, uint8_t loc) {
   float delta = fmod(pos, 1);
 
-  uint8_t r_c = round(c.r * delta);
-  uint8_t g_c = round(c.g * delta);
-  uint8_t b_c = round(c.b * delta);
-
-  uint8_t r_f = round(c.r * (1.0f - delta));
-  uint8_t g_f = round(c.g * (1.0f - delta));
-  uint8_t b_f = round(c.b * (1.0f - delta));
-
-  uint8_t floorPos = floor(pos);
-  uint8_t ceilPos = ceil(pos);
-
-  leds[s][XY(x, constrain(ceilPos, 0, kMatrixHeight))] += CRGB(r_c, g_c, b_c);
-  leds[s][XY(x, constrain(floorPos, 0, kMatrixHeight))] += CRGB(r_f, g_f, b_f);
+  if (loc == 2 || loc == 3 ) {
+    uint8_t r_c = round(c.r * delta);
+    uint8_t g_c = round(c.g * delta);
+    uint8_t b_c = round(c.b * delta);
+    uint8_t ceilPos = ceil(pos);
+    leds[s][XY(x, constrain(ceilPos, 0, kMatrixHeight))] += CRGB(r_c, g_c, b_c);
+  }
+  if (loc == 1 || loc == 3) {
+    uint8_t r_f = round(c.r * (1.0f - delta));
+    uint8_t g_f = round(c.g * (1.0f - delta));
+    uint8_t b_f = round(c.b * (1.0f - delta));
+    uint8_t floorPos = floor(pos);
+    leds[s][XY(x, constrain(floorPos, 0, kMatrixHeight))] += CRGB(r_f, g_f, b_f);
+  }
 }
 
 /**
