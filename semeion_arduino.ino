@@ -44,8 +44,12 @@ const bool    kMatrixSerpentineLayout = true;
 const uint8_t numSides = 2;
 
 //Animation
-volatile uint8_t baseHue = 150;
-volatile uint8_t baseSat = 255;
+volatile uint8_t learnHue = 150;
+volatile uint8_t learnAni1 = 255;
+volatile uint8_t learnAni2 = 0;
+volatile uint8_t learnAni3 = 0;
+volatile uint8_t learnAni4 = 0;
+volatile uint8_t learnAni5 = 0;
 
 const uint8_t climaxThreshold = 50;
 const int timeThreshold = 1000;
@@ -358,8 +362,11 @@ void noiseAnimation(uint8_t s) {
 }
 
 void dotAnimation(uint8_t s) {
-  float curve[] = {0.0, 1.59, 0.03, 1.0, 50};
-  uint16_t height = 16;
+  float react3 = (float) learnAni3 / 255;
+  float react4 = (float) learnAni4 / 255;
+  float react5 = (float) learnAni5 / 255;
+  float curve[] = {0.0, react3, react4, 1.0, 140.0};
+  uint16_t height = 17;
 
   float scale = (float)buildUp[s] / climaxThreshold;
 
@@ -367,14 +374,14 @@ void dotAnimation(uint8_t s) {
 
     float waveVal = (float) quadwave8(beatT[s][x]) / 255 ;
     uint8_t bri = 255 - (50 + (waveVal * 205)) * scale;
-    height = waveVal * (vMatrixHeight/2) * scale;
+    height = waveVal * (vMatrixHeight / 2) * scale;
 
-    height = constrain(height, vPixelDensity, vMatrixHeight);
+    height = constrain(height, vPixelDensity + 1, vMatrixHeight);
     bri = constrain(bri, 0, 255);
-    
+
     //beatT[s][x] = animateTime(max((climaxThreshold / 3) - buildUp[s], 10), beatT[s][x]);
     beatT[s][x] = animateTime(50 - 40 * scale, beatT[s][x]);
-    if (beatT[s][x] >= 255 - (127*scale)) {
+    if (beatT[s][x] >= 255 - (127 * scale)) {
       beatT[s][x] = 0;
     }
 
@@ -407,7 +414,7 @@ void dotAnimation(uint8_t s) {
         dotPositionY[s][x] = y;
         dotOld[s][x] = dotPositionY[s][x];
       }
-      dotT[s][x] = animateTime(40, dotT[s][x]);
+      dotT[s][x] = animateTime(40 - (20 * react5), dotT[s][x]);
       isDotMoving[s][x] = true;
 
     } else { //Explore
@@ -440,7 +447,7 @@ void dotAnimation(uint8_t s) {
       dotT[s][x] = 0;
     }
 
-    CRGB color = ColorFromPalette(noisePalette, baseHue + 127, bri);
+    CRGB color = ColorFromPalette(noisePalette, learnHue + 127, bri);
     downsampleDots(s, x, dotPositionY[s][x], height, color);
 
   }
@@ -469,7 +476,7 @@ uint16_t hurryAnimation(uint8_t s, uint8_t x, uint16_t y) {
 }
 
 uint16_t relaxAnimation(uint8_t s, uint8_t x, uint16_t y) {
-  float curve[] = {0.0, 0.0, 1.0, 1.0, 140.0};
+  float curve[] = {0.0, 0.0, 0.0, 1.0, 140.0};
 
   int16_t delta = y - dotOld[s][x] ;
   uint16_t easedY = (uint16_t)round(dotOld[s][x] + (delta * animate(curve, relaxT[s][x])));
@@ -498,9 +505,11 @@ void triggerReaction(uint8_t s) {
 }
 
 void reactionAnimation(uint8_t s, uint8_t j) {
-  float curve[] = {1, 1, 1, 0, 40}; // Hard flash ease out
-  float react = (float) baseSat / 255;
-  float movement[] = {0, 1, react, react, 40}; // Fast start, slow down
+  float react1 = (float) learnAni1 / 255;
+  float curve[] = {1, react1, react1, 0, 40}; // Hard flash ease out
+
+  float react2 = (float) learnAni2 / 255;
+  float movement[] = {0, 1, react2, react2, 40}; // Fast start, slow down
   boolean stillReacting[] = {false, false};
 
   if (isReadyToReact[s][j]) {
@@ -564,8 +573,7 @@ void climaxAnimation(uint8_t s) {
 
   for (int i = 0; i < kMatrixWidth; i++) {
     for (int j = 0; j < kMatrixHeight; j++) {
-      //leds[s][XY(i, j)] = CHSV(baseHue, 150, 255 * y);
-      leds[s][XY(i, j)] = ColorFromPalette( noisePalette, baseHue + 127, 255 * y);
+      leds[s][XY(i, j)] = ColorFromPalette( noisePalette, learnHue + 127, 255 * y);
     }
   }
 
@@ -699,7 +707,7 @@ void mapNoiseToLEDsUsingPalette(uint8_t s) {
       // array for our brightness, and the flipped value from (j,i)
       // for our pixel's index into the color palette.
 
-      uint8_t index = map(noise[s][kMatrixWidth - x][noiseHeight - y], 0, 255, baseHue - (255 / paletteRatio), baseHue + (255 / paletteRatio));
+      uint8_t index = map(noise[s][kMatrixWidth - x][noiseHeight - y], 0, 255, learnHue - (255 / paletteRatio), learnHue + (255 / paletteRatio));
       uint8_t bri =   round(noise[s][x][y] / dimFactor);
 
       // if this palette is a 'loop', add a slowly-changing base value
@@ -752,16 +760,17 @@ void downsampleDots(uint8_t s, uint8_t x, uint16_t y, uint16_t h, CRGB c) {
 
   posCenter = (float) y / vPixelDensity ;
 
-  if (h > 16) {
+  if (h > vPixelDensity) {
 
     posStart = (float) (y - (h / 2)) / vPixelDensity;
     posEnd = (float) (y + (h / 2)) / vPixelDensity;
+    uint8_t lineLength = floor(posEnd) - ceil(posStart);
 
     downsample(s, x, posStart, c, 1);
     downsample(s, x, posEnd, c, 2);
 
-    for (int i = 0; i < (h / vPixelDensity) + 1 ; i++) {
-      uint8_t linePos = posCenter - ((h / 2) / vPixelDensity) + i ; //Calculate positions between start and end
+    for (int i = 0; i <= lineLength; i++) {
+      uint8_t linePos = ceil(posStart) + i;//Calculate positions between start and end
       leds[s][XY(x, constrain(linePos, 0, kMatrixHeight))] += CRGB(c.r, c.g, c.b);
     }
 
@@ -814,8 +823,12 @@ void receiveData(int byteCount) {
   // A faulty connection would send 255
   // so we're also sending 120 to make sure that the connection is solid
   else if (receiveBuffer[0] == 95 && receiveBuffer[1] == 120) {
-    baseHue = (uint8_t) receiveBuffer[2];
-    baseSat = (uint8_t) receiveBuffer[3];
+    learnHue = (uint8_t) receiveBuffer[2];
+    learnAni1 = (uint8_t) receiveBuffer[3];
+    learnAni2 = (uint8_t) receiveBuffer[4];
+    learnAni3 = (uint8_t) receiveBuffer[5];
+    learnAni4 = (uint8_t) receiveBuffer[6];
+    learnAni5 = (uint8_t) receiveBuffer[7];
   }
 }
 
@@ -853,10 +866,13 @@ void sendSettings() {
   mappedInteractionTime = (uint8_t) map(totalInteractionTime, 0, 60000, 0, 255);
 
   sendBuffer[0] = 120;
-  sendBuffer[1] = baseHue;
-  sendBuffer[2] = baseSat;
-  sendBuffer[3] = 0;
-  sendBuffer[4] = mappedInteractionTime;
+  sendBuffer[1] = learnHue;
+  sendBuffer[2] = learnAni1;
+  sendBuffer[3] = learnAni2;
+  sendBuffer[4] = learnAni3;
+  sendBuffer[5] = learnAni4;
+  sendBuffer[6] = learnAni5;
+  sendBuffer[7] = mappedInteractionTime;
 
   Wire.write(sendBuffer, sendBufferSize);
 
