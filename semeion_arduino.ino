@@ -51,7 +51,7 @@ volatile uint8_t learnAni3 = 0;
 volatile uint8_t learnAni4 = 0;
 volatile uint8_t learnAni5 = 0;
 
-const uint8_t climaxThreshold = 50;
+const uint8_t climaxThreshold = 30;
 const int timeThreshold = 1000;
 const uint8_t reactionThreshold = 2;
 const uint8_t numConcurrentReactions = 2;
@@ -380,7 +380,8 @@ void dotAnimation(uint8_t s) {
     bri = constrain(bri, 0, 255);
 
     //beatT[s][x] = animateTime(max((climaxThreshold / 3) - buildUp[s], 10), beatT[s][x]);
-    beatT[s][x] = animateTime(50 - 40 * scale, beatT[s][x]);
+    beatT[s][x] = animateTime(50 - 40 * scale, beatT[s][x]); // <---- USE THIS LINE
+    //beatT[s][x] = animateTime(400, beatT[s][x]);  //<--- DELETE THIS
     if (beatT[s][x] >= 255 - (127 * scale)) {
       beatT[s][x] = 0;
     }
@@ -414,7 +415,8 @@ void dotAnimation(uint8_t s) {
         dotPositionY[s][x] = y;
         dotOld[s][x] = dotPositionY[s][x];
       }
-      dotT[s][x] = animateTime(40 - (20 * react5), dotT[s][x]);
+      dotT[s][x] = animateTime(40 - (20 * react5), dotT[s][x]); // <---- USE THIS
+      //dotT[s][x] = animateTime(400, dotT[s][x]); // <----- DELETE THIS
       isDotMoving[s][x] = true;
 
     } else { //Explore
@@ -764,16 +766,31 @@ void downsampleDots(uint8_t s, uint8_t x, uint16_t y, uint16_t h, CRGB c) {
 
     posStart = (float) (y - (h / 2)) / vPixelDensity;
     posEnd = (float) (y + (h / 2)) / vPixelDensity;
-    uint8_t lineLength = floor(posEnd) - ceil(posStart);
 
+    //float lineLengthF = (float) posEnd - posStart;
+    //uint8_t lineLength = ceil(lineLengthF);
+    //uint8_t lineLength = ceil((float) posEnd - posStart);
+    uint8_t lineLength = ceil(posEnd) - ceil(posStart);
+    if (fmod(posStart, 1) == 0) {
+      lineLength -= 1;
+    }
+      if (fmod(posEnd, 1) == 0) {
+        lineLength += 1;
+      }
+    //lineLength = max(1, lineLength);
+    //uint8_t lineLength = h / vPixelDensity;
+
+    for (int i = 0; i < lineLength; i++) {
+      uint8_t linePos = ceil(posStart) + i; //Calculate positions between start and end
+      if (fmod(posStart, 1) == 0) {
+        linePos += 1;
+      }
+      leds[s][XY(x, constrain(linePos, 0, kMatrixHeight))] += CRGB(c.r, c.g, c.b);
+
+    }
+    
     downsample(s, x, posStart, c, 1);
     downsample(s, x, posEnd, c, 2);
-
-    for (int i = 0; i <= lineLength; i++) {
-      uint8_t linePos = ceil(posStart) + i;//Calculate positions between start and end
-      leds[s][XY(x, constrain(linePos, 0, kMatrixHeight))] += CRGB(c.r, c.g, c.b);
-    }
-
   } else {
     downsample(s, x, posCenter, c, 3);
   }
@@ -786,20 +803,40 @@ void downsampleDots(uint8_t s, uint8_t x, uint16_t y, CRGB c) {
 void downsample(uint8_t s, uint8_t x, float pos, CRGB c, uint8_t loc) {
   float delta = fmod(pos, 1);
 
-  if (loc == 2 || loc == 3 ) {
-    uint8_t r_c = round(c.r * delta);
-    uint8_t g_c = round(c.g * delta);
-    uint8_t b_c = round(c.b * delta);
-    uint8_t ceilPos = ceil(pos);
-    leds[s][XY(x, constrain(ceilPos, 0, kMatrixHeight))] += CRGB(r_c, g_c, b_c);
-  }
   if (loc == 1 || loc == 3) {
     uint8_t r_f = round(c.r * (1.0f - delta));
     uint8_t g_f = round(c.g * (1.0f - delta));
     uint8_t b_f = round(c.b * (1.0f - delta));
     uint8_t floorPos = floor(pos);
+    //    if ( s == 0 && x == 0) {
+    //      Serial.print(pos);
+    //      Serial.print(" ");
+    //      Serial.print(floorPos);
+    //      Serial.print(" ");
+    //      Serial.println(loc);
+    //    }
     leds[s][XY(x, constrain(floorPos, 0, kMatrixHeight))] += CRGB(r_f, g_f, b_f);
   }
+  if (loc == 2 || loc == 3 ) {
+    uint8_t r_c = round(c.r * delta);
+    uint8_t g_c = round(c.g * delta);
+    uint8_t b_c = round(c.b * delta);
+    uint8_t ceilPos = ceil(pos);
+    if (delta == 0) {
+      ceilPos += 1;
+    }
+
+    //    if ( s == 0 && x == 0) {
+    //      Serial.print(pos);
+    //      Serial.print(" ");
+    //      Serial.print(ceilPos);
+    //      Serial.print(" ");
+    //      Serial.println(loc);
+    //    }
+    leds[s][XY(x, constrain(ceilPos, 0, kMatrixHeight))] += CRGB(r_c, g_c, b_c);
+  }
+
+
 }
 
 /**
