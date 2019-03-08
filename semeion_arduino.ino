@@ -542,7 +542,7 @@ void reactionAnimation(uint8_t s, uint8_t j) {
         uint8_t bri = (uint8_t) map(reactionHeight[s][j], 0, vMatrixHeight / 2, 150, 255);
         //leds[s][XY(x, y)] += CHSV(0, 0, deltaB * bri);
         CRGB c = CHSV(0, 0, deltaB * bri);
-        downsampleDots(s, x, y, c);
+        downsampleDots(s, x, y, 17, c);
         //leds[activeReactionLedsY[s][i]] = CHSV(0, 255,  deltaB * 255);
         activeReactionLedsT[s][x][i + (j * 2)] = animateTime(curve[4], activeReactionLedsT[s][x][i + (j * 2)]);
         stillReacting[j] = true;
@@ -785,7 +785,7 @@ void downsampleDots(uint8_t s, uint8_t x, uint16_t y, uint16_t h, CRGB c) {
       if (fmod(posStart, 1) == 0) {
         linePos += 1;
       }
-      leds[s][XY(x, constrain(linePos, 0, kMatrixHeight-1))] += CRGB(c.r, c.g, c.b);
+      leds[s][XY(x, constrain(linePos, 0, kMatrixHeight-2))] += CRGB(c.r, c.g, c.b);
 
     }
     
@@ -815,7 +815,7 @@ void downsample(uint8_t s, uint8_t x, float pos, CRGB c, uint8_t loc) {
     //      Serial.print(" ");
     //      Serial.println(loc);
     //    }
-    leds[s][XY(x, constrain(floorPos, 0, kMatrixHeight-1))] += CRGB(r_f, g_f, b_f);
+    leds[s][XY(x, constrain(floorPos, 0, kMatrixHeight-2))] += CRGB(r_f, g_f, b_f);
   }
   if (loc == 2 || loc == 3 ) {
     uint8_t r_c = round(c.r * delta);
@@ -833,7 +833,7 @@ void downsample(uint8_t s, uint8_t x, float pos, CRGB c, uint8_t loc) {
     //      Serial.print(" ");
     //      Serial.println(loc);
     //    }
-    leds[s][XY(x, constrain(ceilPos, 0, kMatrixHeight-1))] += CRGB(r_c, g_c, b_c);
+    leds[s][XY(x, constrain(ceilPos, 0, kMatrixHeight-2))] += CRGB(r_c, g_c, b_c);
   }
 
 
