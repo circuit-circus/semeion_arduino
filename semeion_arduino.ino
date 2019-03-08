@@ -115,10 +115,10 @@ volatile uint8_t mappedInteractionTime = 0;
 
 volatile boolean isActive[] = {false, false};
 boolean wasActive[] = {false, false};
-volatile boolean isClimaxing[] = {false, false};
 boolean isReadyToReact[][numConcurrentReactions] = {{true, true}, {true, true}};
 volatile boolean isReacting[][numConcurrentReactions] = {{false, false}, {false, false}};
 boolean isFadingIn[] = {false, false};
+volatile boolean isClimaxing = false;
 
 uint8_t buildUp[] = {0, 0};
 uint8_t reactionHeight[2][2];
@@ -262,7 +262,7 @@ void determineStates() {
 
   for (int s = 0; s < numSides; s++) {
 
-    if (!isClimaxing[s]) {
+    if (!isClimaxing) {
 
       if (currentActivity[s] > deactiveThreshold[s]) {
         //Be active
@@ -291,7 +291,7 @@ void determineStates() {
       }
       if (buildUp[s] >= climaxThreshold) {
         //Climax
-        isClimaxing[s] = true;
+        isClimaxing = true;
         i2cClimax = 1;
         isActive[s] = false;
         for (int i = 0; i < numConcurrentReactions; i++) {
@@ -307,7 +307,7 @@ void determineStates() {
 
 void setAnimation() {
   for (int s = 0; s < numSides; s++) {
-    if (!isClimaxing[s]) {
+    if (!isClimaxing) {
       noiseAnimation(s);
       dotAnimation(s);
       for (int i = 0; i < numConcurrentReactions; i++) {
@@ -582,7 +582,7 @@ void climaxAnimation(uint8_t s) {
   climaxT[s] = animateTime(curve[4], climaxT[s]);
 
   if (climaxT[s] > 254) {
-    isClimaxing[s] = false;
+    isClimaxing = false;
     buildUp[s] = 0;
     climaxT[s] = 0;
     isFadingIn[s] = true;
@@ -748,7 +748,7 @@ void mapNoiseToLEDsUsingPalette(uint8_t s) {
       //color += CRGB(buildUp[s], buildUp[s], buildUp[s]);
 
       for (int i = 0; i < scale; i++) {
-        leds[s][XY(x, constrain(y * scale + i, 0, kMatrixHeight))] = color;
+        leds[s][XY(x, constrain(y * scale + i, 0, kMatrixHeight-1))] = color;
       }
     }
   }
@@ -785,7 +785,7 @@ void downsampleDots(uint8_t s, uint8_t x, uint16_t y, uint16_t h, CRGB c) {
       if (fmod(posStart, 1) == 0) {
         linePos += 1;
       }
-      leds[s][XY(x, constrain(linePos, 0, kMatrixHeight))] += CRGB(c.r, c.g, c.b);
+      leds[s][XY(x, constrain(linePos, 0, kMatrixHeight-1))] += CRGB(c.r, c.g, c.b);
 
     }
     
@@ -815,7 +815,7 @@ void downsample(uint8_t s, uint8_t x, float pos, CRGB c, uint8_t loc) {
     //      Serial.print(" ");
     //      Serial.println(loc);
     //    }
-    leds[s][XY(x, constrain(floorPos, 0, kMatrixHeight))] += CRGB(r_f, g_f, b_f);
+    leds[s][XY(x, constrain(floorPos, 0, kMatrixHeight-1))] += CRGB(r_f, g_f, b_f);
   }
   if (loc == 2 || loc == 3 ) {
     uint8_t r_c = round(c.r * delta);
@@ -833,7 +833,7 @@ void downsample(uint8_t s, uint8_t x, float pos, CRGB c, uint8_t loc) {
     //      Serial.print(" ");
     //      Serial.println(loc);
     //    }
-    leds[s][XY(x, constrain(ceilPos, 0, kMatrixHeight))] += CRGB(r_c, g_c, b_c);
+    leds[s][XY(x, constrain(ceilPos, 0, kMatrixHeight-1))] += CRGB(r_c, g_c, b_c);
   }
 
 
@@ -854,8 +854,8 @@ void receiveData(int byteCount) {
   }
 
   if (receiveBuffer[0] == 96) {
-    isClimaxing[0] = true;
-    isClimaxing[1] = true;
+    isClimaxing = true;
+    //isClimaxing[1] = true;
   }
   // A faulty connection would send 255
   // so we're also sending 120 to make sure that the connection is solid
