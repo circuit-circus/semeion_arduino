@@ -51,7 +51,7 @@ volatile uint8_t learnAni3 = 0;
 volatile uint8_t learnAni4 = 0;
 volatile uint8_t learnAni5 = 0;
 
-const uint8_t climaxThreshold = 90;
+const uint8_t climaxThreshold = 60;
 const int timeThreshold = 1000;
 const uint8_t reactionThreshold = 2;
 const uint8_t numConcurrentReactions = 2;
@@ -118,7 +118,7 @@ boolean wasActive[] = {false, false};
 boolean isReadyToReact[][numConcurrentReactions] = {{true, true}, {true, true}};
 volatile boolean isReacting[][numConcurrentReactions] = {{false, false}, {false, false}};
 boolean isFadingIn[] = {false, false};
-volatile boolean isClimaxing = false;
+volatile boolean isClimaxing[] = {false, false};
 
 uint8_t buildUp[] = {0, 0};
 uint8_t reactionHeight[2][2];
@@ -262,7 +262,7 @@ void determineStates() {
 
   for (int s = 0; s < numSides; s++) {
 
-    if (!isClimaxing) {
+    if (!isClimaxing[s]) {
 
       if (currentActivity[s] > deactiveThreshold[s]) {
         //Be active
@@ -291,7 +291,8 @@ void determineStates() {
       }
       if (buildUp[s] >= climaxThreshold) {
         //Climax
-        isClimaxing = true;
+        isClimaxing[0] = true;
+        isClimaxing[1] = true;
         i2cClimax = 1;
         isActive[s] = false;
         for (int i = 0; i < numConcurrentReactions; i++) {
@@ -307,7 +308,7 @@ void determineStates() {
 
 void setAnimation() {
   for (int s = 0; s < numSides; s++) {
-    if (!isClimaxing) {
+    if (!isClimaxing[s]) {
       noiseAnimation(s);
       dotAnimation(s);
       for (int i = 0; i < numConcurrentReactions; i++) {
@@ -320,6 +321,7 @@ void setAnimation() {
       }
     } else {
       climaxAnimation(s);
+      
     }
   }
 }
@@ -582,7 +584,7 @@ void climaxAnimation(uint8_t s) {
   climaxT[s] = animateTime(curve[4], climaxT[s]);
 
   if (climaxT[s] > 254) {
-    isClimaxing = false;
+    isClimaxing[s] = false;
     buildUp[s] = 0;
     climaxT[s] = 0;
     isFadingIn[s] = true;
@@ -854,8 +856,8 @@ void receiveData(int byteCount) {
   }
 
   if (receiveBuffer[0] == 96) {
-    isClimaxing = true;
-    //isClimaxing[1] = true;
+    isClimaxing[0] = true;
+    isClimaxing[1] = true;
   }
   // A faulty connection would send 255
   // so we're also sending 120 to make sure that the connection is solid
