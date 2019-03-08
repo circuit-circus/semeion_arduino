@@ -51,7 +51,7 @@ volatile uint8_t learnAni3 = 0;
 volatile uint8_t learnAni4 = 0;
 volatile uint8_t learnAni5 = 0;
 
-const uint8_t climaxThreshold = 30;
+const uint8_t climaxThreshold = 90;
 const int timeThreshold = 1000;
 const uint8_t reactionThreshold = 2;
 const uint8_t numConcurrentReactions = 2;
@@ -285,7 +285,7 @@ void determineStates() {
       if (isActive[s] && isReady && currentActivity[s] - lastActivity[s] > reactionThreshold && !reactionLocked[s]) {
         triggerReaction(s);
         reactionLocked[s] = true;
-        buildUp[s]++;
+        buildUp[s] += 3;
         // Serial.println(buildUp[s]);
         buildUp[s] = constrain(buildUp[s], 0, 255);
       }
@@ -380,7 +380,7 @@ void dotAnimation(uint8_t s) {
     bri = constrain(bri, 0, 255);
 
     //beatT[s][x] = animateTime(max((climaxThreshold / 3) - buildUp[s], 10), beatT[s][x]);
-    beatT[s][x] = animateTime(50 - 40 * scale, beatT[s][x]); // <---- USE THIS LINE
+    beatT[s][x] = animateTime(50 - 30 * scale, beatT[s][x]); // <---- USE THIS LINE
     //beatT[s][x] = animateTime(400, beatT[s][x]);  //<--- DELETE THIS
     if (beatT[s][x] >= 255 - (127 * scale)) {
       beatT[s][x] = 0;
